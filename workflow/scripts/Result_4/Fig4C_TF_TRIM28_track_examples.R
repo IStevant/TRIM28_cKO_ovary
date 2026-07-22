@@ -433,6 +433,9 @@ NR5A2_peaks <- rtracklayer::import(NR5A2_peaks_file)
 ESR2_peaks <- rtracklayer::import(ESR2_peaks_file)
 RUNX_peaks <- rtracklayer::import(RUNX_peaks_file)
 
+log_message("Import done")
+
+
 ###########################################
 # Prepare tracks
 ###########################################

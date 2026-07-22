@@ -1,93 +1,200 @@
 source(".Rprofile")
 
 suppressPackageStartupMessages({
-	library("GenomicRanges")
+  library("GenomicRanges")
 })
 
+
 ###########################################
-#                                         #
-#               Load data                 #
-#                                         #
+# Logging functions
 ###########################################
 
-# Load inputs
+log_message <- function(...) {
+  message("[INFO] ", ...)
+}
+
+log_error <- function(...) {
+  stop("[ERROR] ", ...)
+}
+
+
+###########################################
+# Snakemake inputs, outputs and parameters
+###########################################
+
+log_message("Reading Snakemake inputs, outputs and parameters.")
+
+# Inputs
 raw_peak_folder <- snakemake@input[["raw_peaks"]]
 domains_folder <- snakemake@input[["domains"]]
 genome <- snakemake@input[["genome"]]
 
-# Load parameters
+# Parameters
 condition <- snakemake@params[["condition"]]
 promoter <- snakemake@params[["promoter"]]
 distance <- snakemake@params[["distance"]]
 minimum_rep <- snakemake@params[["minimum_rep"]]
 tmp_folder <- snakemake@params[["tmp"]]
 
-# get outputs
+# Outputs
 consensus_peak_table <- snakemake@output[["consensus_peak_table"]]
 consensus_domain_table <- snakemake@output[["consensus_domain_table"]]
 
 consensus_peak_bed <- snakemake@output[["consensus_peak_bed"]]
 consensus_domain_bed <- snakemake@output[["consensus_domain_bed"]]
 
-# gtf_files <- snakemake@output[["gtf_files"]]
 
-# Get AB from condition name
-AB <- unique(sapply(strsplit(condition, "_"), `[`, 2))
+###########################################
+# Validate inputs
+###########################################
 
-# Get the minimal distance between peaks that defines a domain
-distance_between_peaks <- distance[AB]
+for (folder in c(raw_peak_folder, domains_folder)) {
+  if (!dir.exists(folder)) {
+    log_error("Directory does not exist: ", folder)
+  }
+}
 
-# Prepare the genome for peak annotation
+if (!file.exists(genome)) {
+  log_error("Genome annotation file does not exist: ", genome)
+}
+
+
+###########################################
+# Prepare genome annotation
+###########################################
+
+log_message("Preparing genome annotation.")
+
+# Get antibody from condition name
+AB <- unique(
+  sapply(
+    strsplit(condition, "_"),
+    `[`,
+    2
+  )
+)
+
+if (length(AB) != 1) {
+  log_error(
+    "Unable to determine a unique antibody from condition: ",
+    condition
+  )
+}
+
+distance_between_peaks <- distance[[AB]]
+
 genome_gtf <- rtracklayer::import(genome)
-gene2symbol <- GenomicRanges::mcols(genome_gtf)[, c("gene_id", "gene_name")]
-gene2symbol <- unique(gene2symbol)
+
+gene2symbol <- unique(
+  GenomicRanges::mcols(genome_gtf)[, c("gene_id", "gene_name")]
+)
+
 rownames(gene2symbol) <- gene2symbol$gene_id
+
 TxDb <- txdbmaker::makeTxDbFromGFF(genome)
 
+
 ###########################################
-#                                         #
-#                Functions                #
-#                                         #
+# Functions
 ###########################################
 
+# Export annotated GRanges as a tab-separated table.
 export_table <- function(gr, file) {
-    region <- paste0(seqnames(gr), ":", start(gr), "-", end(gr))
-  cols <- c("annotation", "geneId", "distanceToTSS")
-  df <- data.frame(
+
+  region <- paste0(
+    seqnames(gr),
+    ":",
+    start(gr),
+    "-",
+    end(gr)
+  )
+
+  annotation_columns <- c(
+    "annotation",
+    "geneId",
+    "distanceToTSS"
+  )
+
+  data <- data.frame(
     chromosome = seqnames(gr),
     start = start(gr),
     end = end(gr),
     region = region,
-    as.data.frame(mcols(gr[,cols])),
+    as.data.frame(
+      mcols(gr[, annotation_columns])
+    ),
     stringsAsFactors = FALSE
   )
-  write.table(
-    df, file = file, sep = "\t",
-    quote = FALSE, row.names = FALSE, col.names = TRUE
-  )
 
+  write.table(
+    data,
+    file = file,
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE,
+    col.names = TRUE
+  )
 }
 
-get_consensus <- function(gr_list, min_overlap, distance){
+
+# Generate consensus regions supported by a minimum number of replicates.
+get_consensus <- function(
+    gr_list,
+    min_overlap,
+    distance) {
+
   for (i in seq_along(gr_list)) {
-    mcols(gr_list[[i]])$source_file <- paste0("file_", i)
+    mcols(gr_list[[i]])$source_file <- paste0(
+      "file_",
+      i
+    )
   }
 
-  all_gr <- do.call(c, gr_list)
-  blocks <- disjoin(all_gr)
+  all_regions <- do.call(
+    c,
+    gr_list
+  )
 
-  presence_matrix <- sapply(gr_list, function(gr) {
-    !is.na(findOverlaps(blocks, gr, select = "first"))
-  })
+  blocks <- GenomicRanges::disjoin(all_regions)
 
-  support_count <- rowSums(presence_matrix)
-  kept_blocks <- blocks[support_count >= min_overlap]
-  fused_regions <- reduce(kept_blocks, min.gapwidth = as.numeric(distance))
+  presence_matrix <- sapply(
+    gr_list,
+    function(gr) {
+      !is.na(
+        findOverlaps(
+          blocks,
+          gr,
+          select = "first"
+        )
+      )
+    }
+  )
 
-  peak_anno <- ChIPseeker::as.GRanges(
+  support_count <- rowSums(
+    presence_matrix
+  )
+
+  kept_blocks <- blocks[
+    support_count >= min_overlap
+  ]
+
+  fused_regions <- GenomicRanges::reduce(
+    kept_blocks,
+    min.gapwidth = as.numeric(distance)
+  )
+
+  annotations <- ChIPseeker::as.GRanges(
     ChIPseeker::annotatePeak(
       fused_regions,
-      genomicAnnotationPriority = c("Promoter", "5UTR", "Exon", "Intron", "3UTR", "Downstream", "Intergenic"),
+      genomicAnnotationPriority = c(
+        "Promoter",
+        "5UTR",
+        "Exon",
+        "Intron",
+        "3UTR",
+        "Downstream",
+        "Intergenic"
+      ),
       tssRegion = c(-promoter, 0),
       TxDb = TxDb,
       level = "gene",
@@ -95,63 +202,122 @@ get_consensus <- function(gr_list, min_overlap, distance){
     )
   )
 
-  peak_anno$geneId <- gene2symbol[peak_anno$geneId, "gene_name"]
+  annotations$geneId <- gene2symbol[
+    annotations$geneId,
+    "gene_name"
+  ]
 
-  return(peak_anno)
+  return(annotations)
 }
 
-count_peaks <- function(file_path, peak_type){
-	new_bed_files <- list.files(path = file_path, pattern = paste0(peak_type, "..bed"))
-	peak_nb <- data.frame(sapply(paste0(file_path, "/", new_bed_files), R.utils::countLines))
-	rownames(peak_nb) <- new_bed_files
-	colnames(peak_nb) <- NULL
-	write.csv(peak_nb, file=paste0(file_path, "/", peak_type, "_counts.csv"), sep = "\t", quote=FALSE, col.names=FALSE)
+
+###########################################
+# Consensus peaks
+###########################################
+
+log_message("Generating consensus peaks.")
+
+peak_files <- list.files(
+  path = raw_peak_folder,
+  pattern = condition,
+  full.names = TRUE
+)
+
+if (length(peak_files) == 0) {
+  log_error(
+    "No peak files found for condition: ",
+    condition
+  )
 }
 
-###################################################################################
+peak_granges <- lapply(
+  peak_files,
+  function(file) {
 
-# Peaks
-bed_files <- list.files(path = raw_peak_folder, pattern = condition, full.names = TRUE)
+    bed <- read.csv(
+      file,
+      header = FALSE,
+      sep = "\t"
+    )
 
-gr_list <- lapply(bed_files, function(file){
-  bed <- read.csv(file, header = FALSE, sep="\t")
-	GR <- GRanges(
-	  seqnames = bed[[1]],
-	  ranges = IRanges(start = bed[[2]], end = bed[[3]]),
-	  strand = "*"
-	)
+    GenomicRanges::GRanges(
+      seqnames = bed[[1]],
+      ranges = IRanges(
+        start = bed[[2]],
+        end = bed[[3]]
+      ),
+      strand = "*"
+    )
+  }
+)
 
-   return(GR)
-})
+consensus_peaks <- get_consensus(
+  peak_granges,
+  minimum_rep,
+  1
+)
 
-print("Get consensus peaks")
-consensus <- get_consensus(gr_list, minimum_rep, 1)
+log_message(
+  "Consensus peaks identified: ",
+  length(consensus_peaks)
+)
+
 rtracklayer::export(
-	consensus,
-	consensus_peak_bed,
-	format="BED"
+  consensus_peaks,
+  consensus_peak_bed,
+  format = "BED"
 )
+
 export_table(
-	consensus, 
-	consensus_peak_table
+  consensus_peaks,
+  consensus_peak_table
 )
 
 
-# Domains
-bed_files <- list.files(path = domains_folder, pattern = condition, full.names = TRUE)
-print(bed_files)
-print(domains_folder)
+###########################################
+# Consensus domains
+###########################################
 
+log_message("Generating consensus domains.")
 
-gr_list <- lapply(bed_files, rtracklayer::import)
-print("get consensus domains cond")
-consensus <- get_consensus(gr_list, minimum_rep, distance_between_peaks)
+domain_files <- list.files(
+  path = domains_folder,
+  pattern = condition,
+  full.names = TRUE
+)
+
+if (length(domain_files) == 0) {
+  log_error(
+    "No domain files found for condition: ",
+    condition
+  )
+}
+
+domain_granges <- lapply(
+  domain_files,
+  rtracklayer::import
+)
+
+consensus_domains <- get_consensus(
+  domain_granges,
+  minimum_rep,
+  distance_between_peaks
+)
+
+log_message(
+  "Consensus domains identified: ",
+  length(consensus_domains)
+)
+
 rtracklayer::export(
-	consensus,
-	consensus_domain_bed,
-	format="BED"
+  consensus_domains,
+  consensus_domain_bed,
+  format = "BED"
 )
+
 export_table(
-	consensus, 
-	consensus_domain_table
+  consensus_domains,
+  consensus_domain_table
 )
+
+log_message("Consensus peak and domain generation completed.")

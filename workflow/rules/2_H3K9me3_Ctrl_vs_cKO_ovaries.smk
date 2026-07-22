@@ -93,10 +93,10 @@ rule_Result2_input_list = [
 
 
 # =============================================================================
-# Supplementary data - Differential enriched regions
+# Supplementary data  4- Differential enriched regions
 # =============================================================================
 
-rule SupData_Get_DERs:
+rule SupData4_Get_DERs:
     input:
         counts      = f"{CR_TABLES}/matrices/{{AB}}_raw_counts.csv",
         samplesheet = f"{CR_TABLES}/matrices/{{AB}}_samplesheet.csv",
@@ -113,10 +113,10 @@ rule SupData_Get_DERs:
     resources:
         mem_mb = 84000
     script:
-        "../scripts/Result_2/SupData_CUTandRUN_DER.R"
+        "../scripts/Result_2/SupData4_CUTandRUN_DER.R"
 
 
-rule SupData_Plot_heatmap_DERs:
+rule Plot_heatmap_DERs:
     input:
         sig_DERs    = f"{PROCESSED_DATA}/Diff_Analysis/{{AB}}_sig_DERs.Robj",
         norm_counts = f"{CR_TABLES}/matrices/{{AB}}_norm_counts.csv"

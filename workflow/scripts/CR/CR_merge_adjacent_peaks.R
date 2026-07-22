@@ -1,47 +1,156 @@
 source(".Rprofile")
 
+
 ###########################################
-#                                         #
-#               Load data                 #
-#                                         #
+# Logging functions
 ###########################################
+
+log_message <- function(...) {
+  message("[INFO] ", ...)
+}
+
+log_error <- function(...) {
+  stop("[ERROR] ", ...)
+}
+
+
+###########################################
+# Snakemake inputs, outputs and parameters
+###########################################
+
+log_message("Reading Snakemake inputs, outputs and parameters.")
 
 peak_folder <- snakemake@params[["raw_peaks"]]
 distance <- snakemake@params[["distance"]]
+
 output_folder <- snakemake@output[["output_folder"]]
 output_file <- snakemake@output[["peak_counts"]]
 
+
 ###########################################
-#                                         #
-#              Merge peaks                #
-#                                         #
+# Validate inputs
 ###########################################
 
-# For each defined distance (for each antibody, a minimal distance is set in the "analysis_parameters.yaml" file)
-## Get the antibody name
-## Get the associated bed files
-## Get the associated minimal distance
-## Merge the peaks when the distance between the peaks are inferior to the minimal distance and generate the new bed file
-bedfiles <- lapply(seq_along(distance), function(AB) {
-	AB_name <- names(distance[AB])
-	bed_files <- list.files(path = peak_folder, pattern = AB_name)
-	dist <- distance[AB]
-	for (bed in bed_files){
-		bedtoolsr::bt.merge(
-			i = paste0(peak_folder, "/", bed),
-			d = dist,
-			output = paste0(output_folder, "/", bed)
-		)
-	}
-})
+if (!dir.exists(peak_folder)) {
+  log_error("Peak folder does not exist: ", peak_folder)
+}
 
-# Get the newly created beds
-new_bed_files <- list.files(path = output_folder, pattern = "*.bed")
+if (length(distance) == 0) {
+  log_error("No peak-merging distances were provided.")
+}
 
-# Create a dataframe and count the number of domains per file
-peak_nb <- data.frame(sapply(paste0(output_folder, "/", new_bed_files), R.utils::countLines))
-rownames(peak_nb) <- new_bed_files
-colnames(peak_nb) <- NULL
+if (is.null(names(distance)) || any(names(distance) == "")) {
+  log_error(
+    "Each peak-merging distance must be associated with an antibody name."
+  )
+}
 
-# Save the count file
-write.csv(peak_nb, file=output_file, sep = "\t", quote=FALSE, col.names=FALSE)
+dir.create(
+  output_folder,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+###########################################
+# Merge peaks
+###########################################
+
+# For each antibody, merge peaks separated by no more than the distance
+# defined in the analysis parameters.
+for (antibody in names(distance)) {
+
+  merge_distance <- as.numeric(
+    distance[[antibody]]
+  )
+
+  log_message(
+    "Processing antibody ",
+    antibody,
+    " with a merging distance of ",
+    merge_distance,
+    " bp."
+  )
+
+  bed_files <- list.files(
+    path = peak_folder,
+    pattern = antibody
+  )
+
+  if (length(bed_files) == 0) {
+    log_error(
+      "No peak files found for antibody: ",
+      antibody
+    )
+  }
+
+  for (bed_file in bed_files) {
+
+    input_bed <- file.path(
+      peak_folder,
+      bed_file
+    )
+
+    output_bed <- file.path(
+      output_folder,
+      bed_file
+    )
+
+    log_message("Merging peaks from: ", bed_file)
+
+    bedtoolsr::bt.merge(
+      i = input_bed,
+      d = merge_distance,
+      output = output_bed
+    )
+  }
+}
+
+
+###########################################
+# Count merged peaks
+###########################################
+
+log_message("Counting merged peaks in output BED files.")
+
+new_bed_files <- list.files(
+  path = output_folder,
+  pattern = "\\.bed$",
+  full.names = TRUE
+)
+
+if (length(new_bed_files) == 0) {
+  log_error(
+    "No merged BED files were generated in: ",
+    output_folder
+  )
+}
+
+peak_counts <- vapply(
+  new_bed_files,
+  R.utils::countLines,
+  numeric(1)
+)
+
+peak_count_table <- data.frame(
+  peak_count = peak_counts,
+  row.names = basename(new_bed_files)
+)
+
+
+###########################################
+# Export results
+###########################################
+
+log_message("Writing peak count table: ", output_file)
+
+write.table(
+  peak_count_table,
+  file = output_file,
+  sep = "\t",
+  quote = FALSE,
+  row.names = TRUE,
+  col.names = FALSE
+)
+
+log_message("Peak merging and counting completed.")

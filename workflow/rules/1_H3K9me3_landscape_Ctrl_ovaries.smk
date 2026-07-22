@@ -30,13 +30,13 @@ TFBS_BACKGROUND = ["genome", "conditions"]
 # =============================================================================
 
 rule_Result1_input_list = [
-    f"{OUTPUT_PDF}/Fig1E_genomic_track_example.pdf",
-    f"{OUTPUT_PNG}/Fig1E_genomic_track_example.png",
-
     f"{OUTPUT_TABLES}/peaks/H3K9me3_TRIM28_overlap.txt",
     f"{OUTPUT_TABLES}/peaks/TRIM28_H3K9me3_overlap.txt",
-    f"{OUTPUT_PDF}/Fig1F_H3K9me3_TRIM28_overlap.pdf",
-    f"{OUTPUT_PNG}/Fig1F_H3K9me3_TRIM28_overlap.png",
+    f"{OUTPUT_PDF}/Fig1E_H3K9me3_TRIM28_overlap.pdf",
+    f"{OUTPUT_PNG}/Fig1E_H3K9me3_TRIM28_overlap.png",
+
+    f"{OUTPUT_PDF}/Fig1F_genomic_track_example.pdf",
+    f"{OUTPUT_PNG}/Fig1F_genomic_track_example.png",
 
     f"{OUTPUT_PDF}/FigS1_H3K9me3_TRIM28_FOXL2_overlap.pdf",
     f"{OUTPUT_PNG}/FigS1_H3K9me3_TRIM28_FOXL2_overlap.png",
@@ -56,10 +56,31 @@ rule_Result1_input_list = [
 
 
 # =============================================================================
-# Figure 1E - Genomic tracks
+# Figure 1E - H3K9me3 / TRIM28 overlap
 # =============================================================================
 
-rule Fig1E_plot_genomic_tracks_example:
+rule Fig1E_H3K9me3_vs_TRIM28_overlap:
+    input:
+        H3K9me3_peaks = f"{CR_TABLES}/peaks/consensus_per_condition/WT_H3K9me3_consensus_peaks.bed",
+        TRIM28_peaks  = config["TRIM28_peaks"]
+    params:
+        distance_to_H3K9me3 = config["distance_to_H3K9me3"]
+    output:
+        common_h3k9me3 = f"{OUTPUT_TABLES}/peaks/H3K9me3_TRIM28_overlap.txt",
+        common_trim28  = f"{OUTPUT_TABLES}/peaks/TRIM28_H3K9me3_overlap.txt",
+        pdf            = f"{OUTPUT_PDF}/Fig1E_H3K9me3_TRIM28_overlap.pdf",
+        png            = f"{OUTPUT_PNG}/Fig1E_H3K9me3_TRIM28_overlap.png"
+    threads: 1
+    resources:
+        mem_mb = 12000
+    script:
+        "../scripts/Result_1/FigE_H3K9me3_TRIM28_overlap_venn.R"
+
+# =============================================================================
+# Figure 1F - Genomic tracks
+# =============================================================================
+
+rule Fig1F_plot_genomic_tracks_example:
     input:
         H3K9me3_bigwig  = f"{CR_MERGED_BIGWIG_FOLDER}/WT_H3K9me3.bw",
         H3K9me3_domains = f"{CR_TABLES}/peaks/consensus_per_condition/WT_H3K9me3_consensus_domains.bed",
@@ -71,36 +92,13 @@ rule Fig1E_plot_genomic_tracks_example:
     params:
         region = "chr9:22186341-22299046"
     output:
-        png = f"{OUTPUT_PNG}/Fig1E_genomic_track_example.png",
-        pdf = f"{OUTPUT_PDF}/Fig1E_genomic_track_example.pdf"
+        png = f"{OUTPUT_PNG}/Fig1F_genomic_track_example.png",
+        pdf = f"{OUTPUT_PDF}/Fig1F_genomic_track_example.pdf"
     threads: 12
     resources:
         mem_mb = 64000
     script:
-        "../scripts/Result_1/Fig1E_Plot_genomic_tracks_example.R"
-
-
-# =============================================================================
-# Figure 1F - H3K9me3 / TRIM28 overlap
-# =============================================================================
-
-rule Fig1F_H3K9me3_vs_TRIM28_overlap:
-    input:
-        H3K9me3_peaks = f"{CR_TABLES}/peaks/consensus_per_condition/WT_H3K9me3_consensus_peaks.bed",
-        TRIM28_peaks  = config["TRIM28_peaks"]
-    params:
-        distance_to_H3K9me3 = config["distance_to_H3K9me3"]
-    output:
-        common_h3k9me3 = f"{OUTPUT_TABLES}/peaks/H3K9me3_TRIM28_overlap.txt",
-        common_trim28  = f"{OUTPUT_TABLES}/peaks/TRIM28_H3K9me3_overlap.txt",
-        pdf            = f"{OUTPUT_PDF}/Fig1F_H3K9me3_TRIM28_overlap.pdf",
-        png            = f"{OUTPUT_PNG}/Fig1F_H3K9me3_TRIM28_overlap.png"
-    threads: 1
-    resources:
-        mem_mb = 12000
-    script:
-        "../scripts/Result_1/Fig1F_H3K9me3_TRIM28_overlap_venn.R"
-
+        "../scripts/Result_1/Fig1F_Plot_genomic_tracks_example.R"
 
 # =============================================================================
 # Figure S1 / Supplementary Data 2 - H3K9me3, TRIM28 and FOXL2 overlap
@@ -174,10 +172,10 @@ rule Fig1H_H3K9me3_vs_TRIM28_TFBS:
 
 
 # =============================================================================
-# SupData1 - Peak annotation
+# SupData2 - Peak annotation
 # =============================================================================
 
-rule SupData1_annotate_TRIM28_peaks:
+rule SupData2_annotate_TRIM28_peaks:
     input:
         bed    = config["TRIM28_peaks"],
         genome = "results/data/gencode.vM25.annotation.gtf.gz"
@@ -189,9 +187,9 @@ rule SupData1_annotate_TRIM28_peaks:
     resources:
         mem_mb = 98000
     script:
-        "../scripts/Result_1/SupData1_annotate_peaks.R"
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
 
-rule SupData1_annotate_FOXL2_peaks:
+rule SupData2_annotate_FOXL2_peaks:
     input:
         bed    = config["FOXL2_Ctrl"],
         genome = "results/data/gencode.vM25.annotation.gtf.gz"
@@ -203,4 +201,4 @@ rule SupData1_annotate_FOXL2_peaks:
     resources:
         mem_mb = 98000
     script:
-        "../scripts/Result_1/SupData1_annotate_peaks.R"
+        "../scripts/Result_1/SupData2_annotate_peaks.R"

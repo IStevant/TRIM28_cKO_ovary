@@ -1,158 +1,318 @@
 source(".Rprofile")
 
-###########################################
-#                                         #
-#               Libraries                 #
-#                                         #
-###########################################
-
 suppressPackageStartupMessages({
+  library("ComplexHeatmap")
   library("cowplot")
+  library("eulerr")
+  library("ggplot2")
+  library("ggrepel")
   library("grid")
   library("viridis")
-  library("ggplot2")
-  library("ComplexHeatmap")
-  library("ChIPpeakAnno")
-  library("futile.logger")
-  library("eulerr")
-  library("dplyr")
-  library("shades")
-  library("ggrepel")
 })
 
+
 ###########################################
-#                                         #
-#               Load data                 #
-#                                         #
+# Logging functions
 ###########################################
 
-counts <- read.csv(file = snakemake@input[["counts"]], header=TRUE, row.names = 1)
-norm_data <- read.csv(file = snakemake@input[["norm_data"]], row.names = 1)
+log_message <- function(...) {
+  message("[INFO] ", ...)
+}
+
+log_error <- function(...) {
+  stop("[ERROR] ", ...)
+}
+
+
+###########################################
+# Snakemake inputs, outputs and parameters
+###########################################
+
+log_message("Reading Snakemake inputs, outputs and parameters.")
+
+counts_file <- snakemake@input[["counts"]]
+norm_data_file <- snakemake@input[["norm_data"]]
+
 raw_peak_folder <- snakemake@params[["raw_peak_folder"]]
 min_peak_rep <- snakemake@params[["min_peak_rep"]]
 minReads <- snakemake@params[["minReads"]]
 promoter <- snakemake@params[["promoter"]]
-conditions <- gsub("_REP.*", "\\1", colnames(norm_data))
-
-# Pick colors
-set.seed(1234)
-conditions_color <- randomcoloR::distinctColorPalette(length(unique(conditions)))
-
-names(conditions_color) <- unique(conditions)
-# conditions_color <- conditions_color[order(names(conditions_color))]
-
 corr_method <- snakemake@params[["corr_method"]]
 
+output_pdf <- snakemake@output[["pdf"]]
+output_png <- snakemake@output[["png"]]
+
+
 ###########################################
-#                                         #
-#          ChIPseeker options             #
-#                                         #
+# Load data
 ###########################################
 
-# Ignore unnecessary annotation
+log_message("Loading raw count matrix: ", counts_file)
+
+if (!file.exists(counts_file)) {
+  log_error("Raw count matrix does not exist: ", counts_file)
+}
+
+counts <- read.csv(
+  file = counts_file,
+  header = TRUE,
+  row.names = 1
+)
+
+log_message("Loading normalised count matrix: ", norm_data_file)
+
+if (!file.exists(norm_data_file)) {
+  log_error("Normalised count matrix does not exist: ", norm_data_file)
+}
+
+norm_data <- read.csv(
+  file = norm_data_file,
+  header = TRUE,
+  row.names = 1
+)
+
+if (!identical(colnames(counts), colnames(norm_data))) {
+  log_error(
+    "Raw and normalised count matrices do not contain samples in the same order."
+  )
+}
+
+conditions <- gsub(
+  "_REP.*",
+  "\\1",
+  colnames(norm_data)
+)
+
+log_message(
+  "Detected conditions: ",
+  paste(unique(conditions), collapse = ", ")
+)
+
+
+###########################################
+# Plot parameters
+###########################################
+
+set.seed(1234)
+
+conditions_color <- randomcoloR::distinctColorPalette(
+  length(unique(conditions))
+)
+
+names(conditions_color) <- unique(conditions)
+
+
+###########################################
+# ChIPseeker options
+###########################################
+
 options(ChIPseeker.ignore_1st_exon = TRUE)
 options(ChIPseeker.ignore_1st_intron = TRUE)
 options(ChIPseeker.ignore_downstream = TRUE)
 options(ChIPseeker.ignore_promoter_subcategory = TRUE)
 
-#################################################################################################################################
 
 ###########################################
-#                                         #
-#               Functions                 #
-#                                         #
+# Functions
 ###########################################
 
-#' Draw the correlation matrix between the samples
+#' Draw the correlation matrix between samples
+#'
 #' @param matrix Expression matrix.
-#' @param conditions Vector containing the names of the conditions of the samples. The length should be the same as the number of samples.
-#' @param method Method for the correlation (Example: "Spearman" or "Pearson"). Default is "Spearman".
-#' @param colours Vector containing the hexadecimal colours corresponding to each conditions.
-#' @return Pheatmap object.
-correlation <- function(matrix, method = "Spearman", colours) {
-  # matrix <- matrix[, order(names(matrix))]
-  cor_data <- cor(matrix, method = method)
-  cor_data[cor_data == 1.000] <- NA
-  conditions <- gsub("_REP.*", "\\1", colnames(matrix))
+#' @param method Correlation method.
+#' @param colours Named vector containing one colour per condition.
+#'
+#' @return A graphical object containing the correlation heatmap.
+correlation <- function(matrix, method = "spearman", colours) {
 
-  anno <- data.frame(
-    Samples = conditions
+  log_message(
+    "Calculating pairwise sample correlations using ",
+    method,
+    "."
   )
 
-  colors <- list(Samples=conditions_color)
+  method <- tolower(method)
 
-  heatmap <- Heatmap(
+  cor_data <- cor(
+    matrix,
+    method = method
+  )
+
+  cor_data[cor_data == 1] <- NA
+
+  sample_conditions <- gsub(
+    "_REP.*",
+    "\\1",
+    colnames(matrix)
+  )
+
+  annotation <- data.frame(
+    Samples = sample_conditions,
+    row.names = colnames(matrix)
+  )
+
+  annotation_colours <- list(
+    Samples = colours
+  )
+
+  heatmap <- ComplexHeatmap::Heatmap(
     cor_data,
     name = "Correlation",
-    cluster_rows = F, 
-    cluster_columns = F, 
-    col = viridis::viridis(n = 100,option = 'C'),
-    left_annotation = rowAnnotation(df = anno, col=colors, annotation_legend_param = list(at = names(conditions_color))),
-    top_annotation = columnAnnotation(df = anno, col=colors, show_legend=c(F,F,F)),
-    width = unit(0.65, "snpc"),
-    height = unit(0.65, "snpc")
+    cluster_rows = FALSE,
+    cluster_columns = FALSE,
+    col = viridis::viridis(
+      n = 100,
+      option = "C"
+    ),
+    left_annotation = ComplexHeatmap::rowAnnotation(
+      df = annotation,
+      col = annotation_colours,
+      annotation_legend_param = list(
+        at = names(colours)
+      )
+    ),
+    top_annotation = ComplexHeatmap::columnAnnotation(
+      df = annotation,
+      col = annotation_colours,
+      show_legend = FALSE
+    ),
+    width = grid::unit(
+      0.65,
+      "snpc"
+    ),
+    height = grid::unit(
+      0.65,
+      "snpc"
+    )
   )
 
-  heatmap <- draw(
+  correlation_plot <- grid::grid.grabExpr(
+    ComplexHeatmap::draw(
       heatmap,
-      column_title=paste0("Pairwise sample correlation (",method,")"),
-      column_title_gp=grid::gpar(fontsize=12, fontface="bold")
+      column_title = paste0(
+        "Pairwise sample correlation (",
+        method,
+        ")"
+      ),
+      column_title_gp = grid::gpar(
+        fontsize = 12,
+        fontface = "bold"
+      )
+    )
   )
 
-  plot <- grid.grabExpr(
-    draw(heatmap)
-  )
-
-  return(plot)
+  return(correlation_plot)
 }
 
-#' Proceed to the PCA using prcomp.
+
+#' Perform principal component analysis
+#'
 #' @param matrix Expression matrix.
-#' @return prcomp object.
+#'
+#' @return A prcomp object.
 run_pca <- function(matrix) {
-  print("Calculating the PCA...")
-  t.matrix <- t(matrix)
-  t.matrix.no0 <- t.matrix[, colSums(t.matrix) != 0]
+
+  log_message("Calculating principal component analysis.")
+
+  transposed_matrix <- t(matrix)
+
+  transposed_matrix <- transposed_matrix[
+    ,
+    colSums(transposed_matrix) != 0,
+    drop = FALSE
+  ]
+
+  if (ncol(transposed_matrix) == 0) {
+    log_error(
+      "PCA cannot be performed because all regions have zero counts."
+    )
+  }
+
   pca <- prcomp(
-    t.matrix.no0,
+    transposed_matrix,
     center = TRUE,
     scale. = TRUE
   )
+
   return(pca)
 }
 
-#' Plot the PCA.
+
+#' Plot principal component analysis
+#'
 #' @param matrix Expression matrix.
-#' @param conditions Vector containing the names of the conditions of the samples. The length should be the same as the number of samples.
-#' @param colours Vector containing the hexadecimal colours corresponding to each conditions.
-#' @param PCs Vector PCs to plot. Default is "PC1" vs "PC2". If more than two PCs provided, all the possible combinations are drawn.
-#' @return Pheatmap object.
-plot.pca <- function(matrix, colours, PCs = c("PC1", "PC2")) {
+#' @param colours Named vector containing one colour per condition.
+#' @param PCs Principal components to plot.
+#'
+#' @return A list of ggplot objects.
+plot_pca <- function(
+    matrix,
+    colours,
+    PCs = c("PC1", "PC2")) {
+
   pca <- run_pca(matrix)
-  print("Generating the plots...")
-  percent_var_explained <- (pca$sdev^2 / sum(pca$sdev^2)) * 100
-  cond <- factor(conditions)
-  col <- factor(conditions)
-  levels(col) <- colours
-  col <- as.vector(col)
-  conditions <- gsub("_REP.*", "\\1", colnames(matrix))
-  replicates <- stringr::str_to_sentence(sub(".*_(REP[0-9]+)", "\\1", colnames(matrix)))
+
+  log_message("Generating PCA plots.")
+
+  percent_var_explained <- (
+    pca$sdev^2 / sum(pca$sdev^2)
+  ) * 100
+
+  sample_conditions <- gsub(
+    "_REP.*",
+    "\\1",
+    colnames(matrix)
+  )
+
+  replicates <- stringr::str_to_sentence(
+    sub(
+      ".*_(REP[0-9]+)",
+      "\\1",
+      colnames(matrix)
+    )
+  )
+
   scores <- as.data.frame(pca$x)
-  PCs.combinations <- combn(PCs, 2)
+
+  missing_PCs <- setdiff(
+    PCs,
+    colnames(scores)
+  )
+
+  if (length(missing_PCs) > 0) {
+    log_error(
+      "The following principal components are unavailable: ",
+      paste(missing_PCs, collapse = ", ")
+    )
+  }
+
+  PC_combinations <- combn(
+    PCs,
+    2
+  )
+
   plots <- apply(
-    PCs.combinations,
+    PC_combinations,
     2,
     function(combination) {
-      data <- scores[, c(combination[1], combination[2])]
-      data$cond <- conditions
-      data$rep <- replicates
-      colnames(data) <- c("PC_x", "PC_y", "cond")
-      plot <- ggplot(data, aes(x = PC_x, y = PC_y, fill = cond, color = cond)) +
+
+      data <- data.frame(
+        PC_x = scores[[combination[1]]],
+        PC_y = scores[[combination[2]]],
+        condition = sample_conditions,
+        replicate = replicates
+      )
+
+      ggplot(
+        data,
+        aes(
+          x = PC_x,
+          y = PC_y,
+          fill = condition
+        )
+      ) +
         geom_label_repel(
-          aes(
-            label = replicates
-            # color = cond
-          ),
+          aes(label = replicate),
           box.padding = 0.7,
           color = "#444444",
           size = 4,
@@ -160,72 +320,191 @@ plot.pca <- function(matrix, colours, PCs = c("PC1", "PC2")) {
           force = 1,
           max.overlaps = 25
         ) +
-        geom_point(shape = 21, size = 6, stroke = 0.5, color = "#333333") +
-        scale_fill_manual(values = conditions_color, breaks=names(conditions_color)) +
-        ggtitle("PCA on open chromatin region accessibility")+
+        geom_point(
+          shape = 21,
+          size = 6,
+          stroke = 0.5,
+          color = "#333333"
+        ) +
+        scale_fill_manual(
+          values = colours,
+          breaks = names(colours)
+        ) +
+        xlab(
+          paste0(
+            combination[1],
+            " (",
+            round(
+              percent_var_explained[
+                as.numeric(
+                  gsub(
+                    "PC",
+                    "",
+                    combination[1]
+                  )
+                )
+              ],
+              digits = 2
+            ),
+            "%)"
+          )
+        ) +
+        ylab(
+          paste0(
+            combination[2],
+            " (",
+            round(
+              percent_var_explained[
+                as.numeric(
+                  gsub(
+                    "PC",
+                    "",
+                    combination[2]
+                  )
+                )
+              ],
+              digits = 2
+            ),
+            "%)"
+          )
+        ) +
+        ggtitle(
+          "PCA on open chromatin region accessibility"
+        ) +
         theme_bw() +
-        xlab(paste(combination[1], " ", "(", round(percent_var_explained[as.numeric(gsub("PC", "", combination[1]))], digit = 2), "%)", sep = "")) +
-        ylab(paste(combination[2], " ", "(", round(percent_var_explained[as.numeric(gsub("PC", "", combination[2]))], digit = 2), "%)", sep = "")) +
         theme(
-          plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 12),
+          plot.title = element_text(
+            size = 12,
+            face = "bold",
+            hjust = 0.5
+          ),
+          axis.text = element_text(
+            size = 12
+          ),
+          axis.title = element_text(
+            size = 12
+          ),
           aspect.ratio = 1,
           legend.title = element_blank(),
-          legend.text = element_text(size = 12)
+          legend.text = element_text(
+            size = 12
+          )
         )
-      return(plot)
     }
   )
-  print("Done.")
+
+  log_message("PCA plot generation completed.")
+
   return(plots)
 }
 
 
-#' Plot the number of peaks per condition
-#' @param counts list of peaks from each condition.
-#' @return Return a ggplot object.
+#' Plot the overlap of open chromatin regions between conditions
+#'
+#' @param counts Raw count matrix.
+#' @param colours Named vector containing one colour per condition.
+#'
+#' @return A graphical object containing an Euler diagram.
 plot_venn <- function(counts, colours) {
 
-  conditions <- unique(gsub("_REP.*", "\\1", colnames(counts)))
+  log_message("Identifying open chromatin regions per condition.")
 
-  split_by_conditions <- function(df, conditions) {
-    lapply(conditions, function(condition) {
-      df[, grep(condition, colnames(df)), drop = FALSE]
-    }) |> setNames(conditions)
+  conditions <- unique(
+    gsub(
+      "_REP.*",
+      "\\1",
+      colnames(counts)
+    )
+  )
+
+  split_by_conditions <- function(data, conditions) {
+
+    condition_data <- lapply(
+      conditions,
+      function(condition) {
+        data[
+          ,
+          grep(
+            condition,
+            colnames(data)
+          ),
+          drop = FALSE
+        ]
+      }
+    )
+
+    names(condition_data) <- conditions
+
+    return(condition_data)
   }
 
-  split_conds <- split_by_conditions(counts, conditions)
+  split_counts <- split_by_conditions(
+    counts,
+    conditions
+  )
 
-  print("filter replicated peaks")
-  regions <- lapply(split_conds, function(cond){
-      is_open <- ifelse(cond >= minReads,1,0)
-      is_open <- is_open[rowSums(is_open) >= 1, , drop = FALSE]
-      open_regions <- rownames(is_open)
-      return(open_regions)
-    }) |> setNames(conditions)
+  regions <- lapply(
+    split_counts,
+    function(condition_counts) {
 
-  print("Overlap OCR per condition")
+      is_open <- ifelse(
+        condition_counts >= minReads,
+        1,
+        0
+      )
 
-  venn_data <- euler(regions)
+      is_open <- is_open[
+        rowSums(is_open) >= 1,
+        ,
+        drop = FALSE
+      ]
 
-  # Get the sample order to apply the correct colors
-  sample_order <- grep("&", names(venn_data$original.values), invert = TRUE, value= TRUE)
+      rownames(is_open)
+    }
+  )
+
+  names(regions) <- conditions
+
+  log_message("Calculating overlap between conditions.")
+
+  venn_data <- eulerr::euler(regions)
+
+  sample_order <- grep(
+    "&",
+    names(venn_data$original.values),
+    invert = TRUE,
+    value = TRUE
+  )
+
   colours_order <- colours[sample_order]
 
-  # Get the total number of open chromatin region per condition
-  # set_names <- names(venn)
-  totals <- unlist(lapply(sample_order, function(set) {
-    total <- sum(venn_data$original.values[grep(set, names(venn_data$original.values))])
-    return(total)
-  }))
-  names(totals) <- sample_order
+  totals <- unlist(
+    lapply(
+      sample_order,
+      function(condition) {
+        sum(
+          venn_data$original.values[
+            grep(
+              condition,
+              names(venn_data$original.values)
+            )
+          ]
+        )
+      }
+    )
+  )
 
+  names(totals) <- sample_order
 
   venn_plot <- plot(
     venn_data,
     labels = list(
-      labels = paste0(sample_order, "\n(", totals, ")"),
+      labels = paste0(
+        sample_order,
+        "\n(",
+        totals,
+        ")"
+      ),
       font = 2,
       cex = 1.2
     ),
@@ -233,97 +512,193 @@ plot_venn <- function(counts, colours) {
       fontsize = 12
     ),
     edges = list(
-      col = colours_order, 
-      lex = 2
+      col = colours_order,
+      lwd = 2
     ),
     fills = list(
-      fill= colours_order,
-      alpha=0.45
+      fill = colours_order,
+      alpha = 0.45
     )
   )
 
-  venn_plot$vp$width <- unit(0.8, "npc")
-  venn_plot$vp$height <- unit(0.8, "npc")
+  venn_plot$vp$width <- grid::unit(
+    0.8,
+    "npc"
+  )
 
-  title <- ggdraw() + draw_label("Overlap of the open chromatin regions\nbetween conditions", fontface='bold', size=12)
+  venn_plot$vp$height <- grid::unit(
+    0.8,
+    "npc"
+  )
 
-  venn_plot <- plot_grid(
+  title <- cowplot::ggdraw() +
+    cowplot::draw_label(
+      "Overlap of the open chromatin regions\nbetween conditions",
+      fontface = "bold",
+      size = 12
+    )
+
+  venn_plot <- cowplot::plot_grid(
     title,
-    venn_plot, 
-    ncol=1,
-    nrow=2,
+    venn_plot,
+    ncol = 1,
+    nrow = 2,
     rel_heights = c(0.1, 1)
   )
 
   return(venn_plot)
 }
 
-#' Generate the read count matrix
-#' @param anno annotation list containing outputs from ChIPseeker::annotatePeak.
-#' @return Return a dataframe.
+
+#' Plot the genomic annotation of open chromatin regions
+#'
+#' @param counts Raw count matrix.
+#' @param colours Named vector containing one colour per condition.
+#'
+#' @return A ggplot object.
 plot_anno <- function(counts, colours) {
 
-  # Load mouse genome
+  log_message("Loading GENCODE mouse genome annotation.")
 
-  gtf_url <- "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M25/gencode.vM25.annotation.gtf.gz"
-  alt_gtf_url <- "http://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/Gencode_mouse/release_M25/gencode.vM25.annotation.gtf.gz"
+  gtf_url <- paste0(
+    "https://ftp.ebi.ac.uk/pub/databases/gencode/",
+    "Gencode_mouse/release_M25/",
+    "gencode.vM25.annotation.gtf.gz"
+  )
 
-  Genes <- tryCatch({
-    rtracklayer::import(gtf_url)
-   }, error = function(e) {
-    rtracklayer::import(alt_gtf_url)
-   })
+  alt_gtf_url <- paste0(
+    "http://ftp.cbi.pku.edu.cn/pub/mirror/GENCODE/",
+    "Gencode_mouse/release_M25/",
+    "gencode.vM25.annotation.gtf.gz"
+  )
+
+  genes <- tryCatch(
+    {
+      rtracklayer::import(gtf_url)
+    },
+    error = function(e) {
+      log_message(
+        "Primary GENCODE mirror unavailable. Trying alternative mirror."
+      )
+
+      rtracklayer::import(alt_gtf_url)
+    }
+  )
 
   txdb <- txdbmaker::makeTxDbFromGRanges(
-    Genes,
+    genes,
     drop.stop.codons = FALSE
   )
 
-  conditions <- unique(gsub("_REP.*", "\\1", colnames(counts)))
+  conditions <- unique(
+    gsub(
+      "_REP.*",
+      "\\1",
+      colnames(counts)
+    )
+  )
 
-  split_by_conditions <- function(df, conditions) {
-    lapply(conditions, function(condition) {
-      df[, grep(condition, colnames(df)), drop = FALSE]
-    }) |> setNames(conditions)
+  split_by_conditions <- function(data, conditions) {
+
+    condition_data <- lapply(
+      conditions,
+      function(condition) {
+        data[
+          ,
+          grep(
+            condition,
+            colnames(data)
+          ),
+          drop = FALSE
+        ]
+      }
+    )
+
+    names(condition_data) <- conditions
+
+    return(condition_data)
   }
 
-  split_conds <- split_by_conditions(counts, conditions)
+  split_counts <- split_by_conditions(
+    counts,
+    conditions
+  )
 
-  regions <- lapply(split_conds, function(cond){
-      is_open <- ifelse(cond > minReads,1,0)
-      is_open <- is_open[rowSums(is_open) >= min_peak_rep, , drop = FALSE]
-      open_gr <- GRanges(rownames(is_open))
-      open_gr$names <- rownames(is_open)
-      return(open_gr)
-    }) |> setNames(conditions)
+  log_message("Selecting replicated open chromatin regions.")
 
-  anno <- lapply(
+  regions <- lapply(
+    split_counts,
+    function(condition_counts) {
+
+      is_open <- ifelse(
+        condition_counts > minReads,
+        1,
+        0
+      )
+
+      is_open <- is_open[
+        rowSums(is_open) >= min_peak_rep,
+        ,
+        drop = FALSE
+      ]
+
+      open_regions <- GenomicRanges::GRanges(
+        rownames(is_open)
+      )
+
+      open_regions$names <- rownames(is_open)
+
+      return(open_regions)
+    }
+  )
+
+  names(regions) <- conditions
+
+  log_message("Annotating open chromatin regions.")
+
+  annotations <- lapply(
     regions,
-    function(gr) {
+    function(regions_gr) {
       ChIPseeker::annotatePeak(
-        gr,
+        regions_gr,
         tssRegion = c(-promoter, 0),
         TxDb = txdb,
         overlap = "all"
       )
     }
-  ) |> setNames(conditions)
+  )
 
+  names(annotations) <- conditions
 
-  anno <- lapply(1:length(anno), function(x) {
-    stat <- anno[[x]]@annoStat
-    stat$Conditions <- rep(conditions[x], nrow(stat))
-    return(stat)
-  })
+  annotation_stats <- lapply(
+    seq_along(annotations),
+    function(index) {
 
-  data <- data.table::rbindlist(anno)
+      stats <- annotations[[index]]@annoStat
 
-  labels <- round(data$Frequency, digit = 2)
+      stats$Conditions <- rep(
+        conditions[index],
+        nrow(stats)
+      )
+
+      return(stats)
+    }
+  )
+
+  data <- data.table::rbindlist(
+    annotation_stats
+  )
+
+  labels <- round(
+    data$Frequency,
+    digits = 2
+  )
+
   labels[labels < 4] <- 0
   labels <- paste0(labels, "%")
   labels[labels == "0%"] <- " "
 
-  colors <- c(
+  annotation_colours <- c(
     "#f8777c",
     "#0e1b47",
     "#4461a8",
@@ -332,74 +707,181 @@ plot_anno <- function(counts, colours) {
     "#b886da"
   )
 
-  plot <- ggplot(data, aes(fill = Feature, x = factor(Conditions, level = unique(conditions)), y = Frequency)) +
-    geom_bar(stat = "identity") +
-    geom_text(aes(label = labels, color = Feature), size = 5, position = position_stack(vjust = 0.5)) +
-    scale_y_continuous(labels = scales::comma) +
-    scale_fill_manual(values = alpha(colors, 0.8)) +
-    scale_color_manual(values = c("black", "white", "white", "black", "black", "black"), guide = "none") +
+  annotation_plot <- ggplot(
+    data,
+    aes(
+      fill = Feature,
+      x = factor(
+        Conditions,
+        levels = unique(conditions)
+      ),
+      y = Frequency
+    )
+  ) +
+    geom_bar(
+      stat = "identity"
+    ) +
+    geom_text(
+      aes(
+        label = labels,
+        color = Feature
+      ),
+      size = 5,
+      position = position_stack(
+        vjust = 0.5
+      )
+    ) +
+    scale_y_continuous(
+      labels = scales::comma
+    ) +
+    scale_fill_manual(
+      values = alpha(
+        annotation_colours,
+        0.8
+      )
+    ) +
+    scale_color_manual(
+      values = c(
+        "black",
+        "white",
+        "white",
+        "black",
+        "black",
+        "black"
+      ),
+      guide = "none"
+    ) +
     xlab("Conditions") +
-    ggtitle("Open chromatin region\ngenomic location") +
-    # facet_wrap(~Sex, nrow = 1) +
+    ylab("Frequency") +
+    ggtitle(
+      "Open chromatin region\ngenomic location"
+    ) +
     theme_light() +
     theme(
-      plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
-      axis.text = element_text(size = 12),
-      axis.title = element_text(size = 12),
+      plot.title = element_text(
+        size = 12,
+        hjust = 0.5,
+        face = "bold"
+      ),
+      axis.text = element_text(
+        size = 12
+      ),
+      axis.title = element_text(
+        size = 12
+      ),
       legend.title = element_blank(),
-      legend.text = element_text(size = 12, margin = margin(r = 10, unit = "pt")),
-      strip.text.x = element_text(size = 12, face = "bold"),
-      legend.box.spacing = unit(0, "mm"),
+      legend.text = element_text(
+        size = 12,
+        margin = margin(
+          r = 10,
+          unit = "pt"
+        )
+      ),
+      strip.text.x = element_text(
+        size = 12,
+        face = "bold"
+      ),
+      legend.box.spacing = grid::unit(
+        0,
+        "mm"
+      )
     )
-  return(plot)
+
+  return(annotation_plot)
 }
 
-#################################################################################################################################
 
 ###########################################
-#                                         #
-#        Plot correlation and PCA         #
-#                                         #
+# Generate plots
 ###########################################
 
-corr_plot <- correlation(norm_data, corr_method, conditions_color)
-pca_plot <- plot.pca(norm_data, conditions_color, c("PC1", "PC2"))
+log_message("Generating correlation heatmap.")
 
-venn_plot <- plot_venn(counts, conditions_color)
-anno_plot <- plot_anno(counts, conditions_color)
+corr_plot <- correlation(
+  norm_data,
+  corr_method,
+  conditions_color
+)
 
-# Combine the two plots
-figure <- plot_grid(
-  plotlist = list(corr_plot, pca_plot[[1]], venn_plot, anno_plot),
-  # plotlist = list(corr_plot, pca_plot[[1]]),
+log_message("Generating PCA plot.")
+
+pca_plot <- plot_pca(
+  norm_data,
+  conditions_color,
+  c("PC1", "PC2")
+)
+
+log_message("Generating open chromatin region overlap plot.")
+
+venn_plot <- plot_venn(
+  counts,
+  conditions_color
+)
+
+log_message("Generating genomic annotation plot.")
+
+anno_plot <- plot_anno(
+  counts,
+  conditions_color
+)
+
+
+###########################################
+# Assemble figure
+###########################################
+
+log_message("Assembling QC figure.")
+
+figure <- cowplot::plot_grid(
+  plotlist = list(
+    corr_plot,
+    pca_plot[[1]],
+    venn_plot,
+    anno_plot
+  ),
   labels = "AUTO",
-  ncol = 2, 
+  ncol = 2,
   align = "h"
 )
 
-##########################################
-#                                        #
-#               Save plots               #
-#                                        #
-##########################################
 
-# As PDF
-save_plot(
-  snakemake@output[["pdf"]],
+###########################################
+# Export plots
+###########################################
+
+dir.create(
+  dirname(output_pdf),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  dirname(output_png),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+log_message("Saving PDF figure: ", output_pdf)
+
+cowplot::save_plot(
+  output_pdf,
   figure,
   base_width = 30,
   base_height = 20,
-  units = c("cm"),
+  units = "cm",
   dpi = 300
 )
 
-# As PNG
-save_plot(
-  snakemake@output[["png"]],
+log_message("Saving PNG figure: ", output_png)
+
+cowplot::save_plot(
+  output_png,
   figure,
   base_width = 30,
   base_height = 20,
-  units = c("cm"),
+  units = "cm",
   dpi = 300,
   bg = "white"
 )
+
+log_message("QC figure generation completed.")
