@@ -1,0 +1,9 @@
+.snakemake/
+Rplots.pdf
+.character(highlight)
+.conda/
+jobs/
+logs/
+workflow/data/bam
+workflow/data/bigwig
+results/

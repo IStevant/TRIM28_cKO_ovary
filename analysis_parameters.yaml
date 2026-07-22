@@ -1,0 +1,224 @@
+###########################################
+#                                         #
+#           Analysis parameters           #
+#                                         #
+###########################################
+
+########################
+# Mouse genome version #
+########################
+
+genome_version: mm10
+chom_size:      workflow/data/mm10_chrom.size
+repeatMasker:   workflow/data/mm10_te.bed
+
+TFBS_log10FDR : 10     # log10 FDR to condider a TFBS enriched
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+#                              #
+#           ATAC-seq           #
+#                              #
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+
+#################
+# General paths #
+#################
+
+# Do you want to start the analysis directly from the nf-core/ATACseq pipeline output?
+# Can be either yes or no
+ATAC_from_nf-core:          "yes"
+
+# If yes, specify the path to the nf-core/ATACseq output directory
+ATAC_nf-core_path:          /work/user/lsitkiewicz/data/ATACseq/2409_TRIM28_ovaries/mapping_nfcore_ATAC_2.1.2
+
+# Path to the samplesheet used by the nf-core/RNAseq pipeline.
+# Samples will be ordered in the graphs as they are in the samplesheet.
+ATAC_nf-core_samplesheet:   /home/istevant/work/project/trim28_cko_ovary/workflow/data/samplesheet.csv
+
+# Path to necessary data within the nf-core/ATACseq ouput folder
+# Define peak_type as "broad" or "narrow" according to the peak call parameter used by the nf-core/ATACseq pipeline
+ATAC_nf-core_peak_type:     broad
+
+# Sample conditions
+ATAC_nf-core_cond: 
+  - WT
+  - KO
+
+# You don't need to modify the path below except if the nf-core/ATACseq pipeline changed.
+# nf-core_samplesheet:   pipeline_info/samplesheet.valid.csv
+ATAC_nf-core_multiQC:       multiqc/{peak_type}_peak/multiqc_data
+ATAC_nf-core_featureCounts: bwa/merged_library/macs2/{peak_type}_peak/consensus/consensus_peaks.mLb.clN.featureCounts.txt
+ATAC_nf-core_rawPeaks:      bwa/merged_library/macs2/{peak_type}_peak
+ATAC_nf-core_bam:           bwa/merged_library
+ATAC_nf-core_bigwig:        bwa/merged_library/bigwig
+
+# If no, specify the path to the following data:
+ATAC_featureCounts:         Path/to/featureCount/matrix.txt
+ATAC_bam:                   Path/to/bam/files
+ATAC_bigwig:                Path/to/bigwig/files
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#######################
+# Analysis parameters #
+#######################
+
+ATAC_min_peak_rep:      2        # Peak found in X replicates, refer to the nf-core/ATACseq "--min_reps_consensus" parameter (default is 1)
+ATAC_promoter_distance: 2000     # Distance from a gene TSS we consider as a promoter region.
+ATAC_minReads:          20       # Minimum read count in a peak to discard very small peaks
+ATAC_corr_met:          spearman # Correlation method for sample comparison
+ATAC_adjpval:           0.01     # Adjusterd p-value threshold for differential accessibility analysis
+ATAC_log2FC:            0.5      # Fold change threshold for differential accessibility analysis
+TF_genes:               workflow/data/mouse_transcription_factors.txt
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+#                              #
+#         CUT and RUN          #
+#                              #
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+
+#################
+# General paths #
+#################
+
+# Antibodies (e.g. H3K27ac, SOX9, ...)
+# !Important! Use the same names that were used in the samplesheet, respecting the case
+CR_nf-core_AB:
+  - H3K9me3
+  - H3K27ac
+
+CR_nf-core_cond:
+  - WT
+  - KO
+
+# Precise which one is the control
+CR_nf-core_AB_Ctrl:       IGG
+
+# Specify the path to the nf-core/cutandrun output directory
+CR_nf-core_path:          /work/user/istevant/data/CUTandRUN/TRIM28_project/mapping_nf-core_CR_v3.2.2
+
+# Path to the samplesheet used by the nf-core/RNAseq pipeline.
+# Samples will be ordered in the graphs as they are in the samplesheet.
+CR_nf-core_samplesheet:   /work/user/istevant/data/CUTandRUN/TRIM28_project/samplesheet.csv
+
+# Path to necessary data within the nf-core/cutandrun ouput folder
+# You don't need to modify the path below except if the nf-core/cutandrun pipeline changed.
+CR_nf-core_multiQC:       04_reporting/multiqc/multiqc_data
+CR_nf-core_rawPeaks:      03_peak_calling/04_called_peaks/seacr
+CR_nf-core_bam:           02_alignment/bowtie2/target/markdup
+CR_nf-core_bigwig:        03_peak_calling/03_bed_to_bigwig
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#######################
+# Analysis parameters #
+#######################
+
+# Merge adjacent peaks to define enriched regions.
+# Can be either "yes" or "no".
+merge_peaks: "yes"
+# Set to 0 to not merge the peaks.
+CR_merge_peaks:
+  H3K9me3: 2000      # Merge peaks if they are spaced by 2kb or less
+  H3K27ac: 1000      # Merge peaks if they are spaced by 1kb or less
+
+CR_min_peak_rep:      1        # Peak found in X replicates, refer to the nf-core/cutandrun "--min_reps_consensus" parameter (default is 1)
+CR_promoter_distance: 2000     # Distance from a gene TSS we consider as a promoter region.
+CR_minReads:          50       # Minimum read count in a peak to discard very small peaks
+CR_corr_met:          spearman # Correlation method for sample comparison
+CR_adjpval:           0.01     # Adjusterd p-value threshold for differential accessibility analysis
+CR_log2FC:            0.5      # Fold change threshold for differential accessibility analysis
+TF_genes:             workflow/data/mouse_transcription_factors.txt
+
+distance_to_H3K9me3 : 1000  # Extend peaks to a certain window (bp) for TRIM28 overlap with H3K9me3
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+#                              #
+#        ChIP-seq SUMO         #
+#                              #
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+
+#################
+# General paths #
+#################
+
+# Antibodies (e.g. H3K27ac, SOX9, ...)
+# !Important! Use the same names that were used in the samplesheet, respecting the case
+ChIP_nf-core_AB:
+  - SUMO1
+  - SUMO2
+
+ChIP_nf-core_cond:
+  - WT
+  - cKO
+
+# Precise which one is the control
+ChIP_nf-core_AB_Ctrl:       INPUT
+
+# Specify the path to the nf-core/chipseq output directory
+ChIP_nf-core_path:          /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/mapping_nf-core_ChIP_v2.0.0
+
+# Path to the samplesheet used by the nf-core/RNAseq pipeline.
+# Samples will be ordered in the graphs as they are in the samplesheet.
+ChIP_nf-core_samplesheet:   /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/samplesheet.csv
+
+# Path to necessary data within the nf-core/chipseq ouput folder
+# You don't need to modify the path below except if the nf-core/cutandrun pipeline changed.
+ChIP_nf-core_rawPeaks:      bwa/mergedLibrary/macs2/narrowPeak
+ChIP_nf-core_bigwig:        bwa/mergedLibrary/bigwig
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#######################
+# Analysis parameters #
+#######################
+
+ChIP_min_peak_rep:      1        # Peak found in X replicates, refer to the nf-core/cutandrun "--min_reps_consensus" parameter (default is 1)
+ChIP_promoter_distance: 2000     # Distance from a gene TSS we consider as a promoter region.
+ChIP_minReads:          30       # Minimum read count in a peak to discard very small peaks
+ChIP_corr_met:          spearman # Correlation method for sample comparison
+ChIP_adjpval:           0.05     # Adjusterd p-value threshold for differential accessibility analysis
+ChIP_log2FC:            0.5      # Fold change threshold for differential accessibility analysis
+TF_genes:               workflow/data/mouse_transcription_factors.txt
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+#                              #
+#         Multi-omics          #
+#                              #
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+
+#######################
+# Analysis parameters #
+#######################
+
+TRIM28_peaks:    workflow/data/ChIP/TRIM28_peaks.broadPeak_Rossitto.bed
+Sertoli_spe_DAR: workflow/data/ATAC/ATAC_Sertoli-spe_DAR_lindeman2021.bed
+Granulosa_spe_DAR: workflow/data/ATAC/ATAC_Granulosa-spe_DAR_lindeman2021.bed
+
+FOXL2_Ctrl:      workflow/data/ChIP/FOXL2_peaks.broadPeak_Rossitto.bed
+# FOLX2_cKO:       workflow/data/ChIP/FOXL2_cKO_Rossitto.bed
+NR5A2:           workflow/data/ChIP/NR5A2_peaks.broadPeak_Bianco-Murphy.bed
+ESR2:            workflow/data/ChIP/ESR2_peaks.broadPeak_Birgersson-Lindeman.bed
+RUNX:           workflow/data/ChIP/RUNX1_peaks.narrowPeak_Dinh.bed
+
+SUMO1_Ctrl:      workflow/data/ChIP/
+SUMO1_cKO:
+
+bulk_RNAseq:     workflow/data/RNA/DEG_bulk_RNAseq_7months.csv
+scRNAseq:        workflow/data/RNA/DEG_scRNAseq_8weeks_pseudobulk.csv
+expressed_genes: workflow/data/RNA/expressed_genes.csv
+
+Up_TE_cKO:       workflow/data/TE/Intergenic_TE_upregulated_TRIM28cKO_vs_Ctrl.bed
+Down_TE_cKO:     workflow/data/TE/Intergenic_TE_downregulated_TRIM28cKO_vs_Ctrl.bed
+
+
+DEGs:            /work/user/istevant/project/scRNA_Trim28/DEG_GraC_WT_vs_KO_clusters.csv
+gene_coord:      workflow/data/mm10_gene_coord.bed
+distance_to_TSS: 2000
+# marker_genes: workflow/data/gonad_marker_genes.csv
+# example_genes: workflow/data/example_genes.csv
+# TF_genes: workflow/data/mouse_transcription_factors.txt
+# TF_pheno: workflow/data/TF_gonad_pheno.tsv
+# peak_examples: workflow/data/gTrack_gene_examples.tsv
+# gene_peak_examples: workflow/data/peak2gene_query.tsv
