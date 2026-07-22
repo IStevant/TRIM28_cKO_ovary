@@ -29,10 +29,10 @@ ATAC_peaks_file <- snakemake@input[["ATAC_peaks"]]
 ATAC_clustering_file <- snakemake@input[["ATAC_clustering"]]
 
 TRIM28_peaks_file <- snakemake@input[["TRIM28_peaks"]]
-FOXL2_peaks_file <- snakemake@input[["FOXL2_peaks"]]
-NR5A2_peaks_file <- snakemake@input[["NR5A2_peaks"]]
-ESR2_peaks_file <- snakemake@input[["ESR2_peaks"]]
-RUNX_peaks_file <- snakemake@input[["RUNX_peaks"]]
+FOXL2_peaks_file <- snakemake@input[["FOXL2"]]
+NR5A2_peaks_file <- snakemake@input[["NR5A2"]]
+ESR2_peaks_file <- snakemake@input[["ESR2"]]
+RUNX_peaks_file <- snakemake@input[["RUNX"]]
 
 genome_file <- snakemake@input[["genome"]]
 
@@ -428,10 +428,15 @@ log_message("DAR up in cKO / cluster b: ", length(DAR_b))
 log_message("Importing TRIM28 and TF peak files")
 
 TRIM28_peaks <- rtracklayer::import(TRIM28_peaks_file)
+log_message("TRIM28 OK")
 FOXL2_peaks <- rtracklayer::import(FOXL2_peaks_file)
+log_message("FOXL2 OK")
 NR5A2_peaks <- rtracklayer::import(NR5A2_peaks_file)
+log_message("NR5A2 OK")
 ESR2_peaks <- rtracklayer::import(ESR2_peaks_file)
+log_message("ESR2 OK")
 RUNX_peaks <- rtracklayer::import(RUNX_peaks_file)
+log_message("RUNX OK")
 
 log_message("Import done")
 
