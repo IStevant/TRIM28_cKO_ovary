@@ -18,13 +18,13 @@ OUTPUT_PNG     = "results/ChIP/graphs/PNG"
 OUTPUT_PDF     = "results/ChIP/graphs/PDF"
 TMP            = "results/ChIP/tmp"
 
-AB             = config["ChIP_nf-core_AB"]
-CONDITION      = config["ChIP_nf-core_cond"]
-MAPPING_FOLDER = config["ChIP_nf-core_path"]
-SAMPLESHEET    = config["ChIP_nf-core_samplesheet"]
+AB             = config["ChIP_SUMO_nf-core_AB"]
+CONDITION      = config["ChIP_SUMO_nf-core_cond"]
+MAPPING_FOLDER = config["ChIP_SUMO_nf-core_path"]
+SAMPLESHEET    = config["ChIP_SUMO_nf-core_samplesheet"]
 
-RAW_PEAKS = f"{MAPPING_FOLDER}/{config['ChIP_nf-core_rawPeaks']}"
-BIGWIG    = f"{MAPPING_FOLDER}/{config['ChIP_nf-core_bigwig']}"
+RAW_PEAKS = f"{MAPPING_FOLDER}/{config['ChIP_SUMO_nf-core_rawPeaks']}"
+BIGWIG    = f"{MAPPING_FOLDER}/{config['ChIP_SUMO_nf-core_bigwig']}"
 
 PEAK_TYPE = "raw_peaks"
 
@@ -41,7 +41,7 @@ wildcard_constraints:
 # Main output list
 # =============================================================================
 
-rule_ChIP_input_list = [
+rule_ChIP_SUMO_input_list = [
     expand(f"{OUTPUT_TABLES}/peaks/{{condition}}_{{AB}}_consensus_peaks.txt", AB=AB, condition=CONDITION),
     expand(f"{OUTPUT_TABLES}/peaks/{{condition}}_{{AB}}_consensus_peaks.bed", AB=AB, condition=CONDITION),
     expand(f"{OUTPUT_TABLES}/matrices/{{AB}}_raw_counts.csv", AB=AB),
@@ -57,7 +57,7 @@ rule_ChIP_input_list = [
 # Peak processing
 # =============================================================================
 
-rule ChIP_Get_consensus_regions_per_condition:
+rule ChIP_SUMO_Get_consensus_regions_per_condition:
     input:
         raw_peaks = RAW_PEAKS,
         genome    = "results/data/gencode.vM25.annotation.gtf.gz"
@@ -78,7 +78,7 @@ rule ChIP_Get_consensus_regions_per_condition:
 # Quantification matrices
 # =============================================================================
 
-rule ChIP_Filter_matrices:
+rule ChIP_SUMO_Filter_matrices:
     input:
         samplesheet = SAMPLESHEET,
         counts      = f"{RAW_PEAKS}/{{AB}}/{{AB}}.consensus_peaks.featureCounts.txt"
@@ -100,7 +100,7 @@ rule ChIP_Filter_matrices:
 # BigWig normalisation and merging
 # =============================================================================
 
-rule ChIP_Normalize_bigwig:
+rule ChIP_SUMO_Normalize_bigwig:
     input:
         size_factors = f"{OUTPUT_TABLES}/matrices/{{AB}}_size_factors.csv"
     params:
@@ -116,7 +116,7 @@ rule ChIP_Normalize_bigwig:
         "../scripts/ChIP/ChIP_norm_bigwig.R"
 
 
-rule ChIP_Merge_norm_bigwig:
+rule ChIP_SUMO_Merge_norm_bigwig:
     input:
         output_file = f"{CHIP_NORM_BIGWIG_FOLDER}/{{AB}}_size_factors.csv"
     params:

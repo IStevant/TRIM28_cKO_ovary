@@ -17,6 +17,8 @@ ATAC_TABLES         = "results/ATAC/tables"
 ATAC_DAR_TABLES     = "results/Result_3/tables"
 
 CHIP_PROCESSED_DATA = "results/ChIP/processed_data"
+CHIP_PROCESSED_TABLES = "results/ChIP/tables"
+
 
 OUTPUT_TABLES  = "results/Result_5/tables"
 PROCESSED_DATA = "results/Result_5/processed_data"
@@ -83,7 +85,8 @@ rule_Result5_input_list = [
     f"{OUTPUT_PNG}/Fig5E_TRIM28_hub_SUMO_enriched_heatmap.png",
 
     f"{OUTPUT_PNG}/Fig5E_TRIM28_hub_SUMO_DAR_enriched_heatmap.png",
-    f"{OUTPUT_PDF}/Fig5E_TRIM28_hub_SUMO_DAR_enriched_heatmap.pdf"
+    f"{OUTPUT_PDF}/Fig5E_TRIM28_hub_SUMO_DAR_enriched_heatmap.pdf",
+
 ]
 
 
@@ -231,3 +234,4 @@ rule Fig5E_hub_SUMO_DAR_enriched_heatmap:
         mem_mb = 64000
     script:
         "../scripts/Result_5/Fig5E_TRIM28_hub_DAR_SUMO_heatmap.R"
+

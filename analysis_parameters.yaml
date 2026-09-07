@@ -144,28 +144,63 @@ distance_to_H3K9me3 : 1000  # Extend peaks to a certain window (bp) for TRIM28 o
 
 # Antibodies (e.g. H3K27ac, SOX9, ...)
 # !Important! Use the same names that were used in the samplesheet, respecting the case
-ChIP_nf-core_AB:
+ChIP_SUMO_nf-core_AB:
   - SUMO1
   - SUMO2
 
-ChIP_nf-core_cond:
+ChIP_SUMO_nf-core_cond:
   - WT
   - cKO
 
 # Precise which one is the control
-ChIP_nf-core_AB_Ctrl:       INPUT
+ChIP_SUMO_nf-core_AB_Ctrl:       INPUT
 
 # Specify the path to the nf-core/chipseq output directory
-ChIP_nf-core_path:          /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/mapping_nf-core_ChIP_v2.0.0
+ChIP_SUMO_nf-core_path:          /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/mapping_nf-core_ChIP_v2.0.0
 
 # Path to the samplesheet used by the nf-core/RNAseq pipeline.
 # Samples will be ordered in the graphs as they are in the samplesheet.
-ChIP_nf-core_samplesheet:   /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/samplesheet.csv
+ChIP_SUMO_nf-core_samplesheet:   /work/user/istevant/data/ChIPseq/SUMO_Rossitto2019/samplesheet.csv
 
 # Path to necessary data within the nf-core/chipseq ouput folder
 # You don't need to modify the path below except if the nf-core/cutandrun pipeline changed.
-ChIP_nf-core_rawPeaks:      bwa/mergedLibrary/macs2/narrowPeak
-ChIP_nf-core_bigwig:        bwa/mergedLibrary/bigwig
+ChIP_SUMO_nf-core_rawPeaks:      bwa/mergedLibrary/macs2/narrowPeak
+ChIP_SUMO_nf-core_bigwig:        bwa/mergedLibrary/bigwig
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+#                              #
+#        ChIP-seq FOXL2        #
+#                              #
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@#
+
+#################
+# General paths #
+#################
+
+# Antibodies (e.g. H3K27ac, SOX9, ...)
+# !Important! Use the same names that were used in the samplesheet, respecting the case
+ChIP_FOXL2_nf-core_AB:
+  - FOXL2
+
+ChIP_FOXL2_nf-core_cond:
+  - FOXL2_adult_ovary
+  - FOXL2_cKO_adult_ovary
+
+# Precise which one is the control
+ChIP_FOXL2_nf-core_AB_Ctrl:       INPUT_adult_ovary
+
+# Specify the path to the nf-core/chipseq output directory
+ChIP_FOXL2_nf-core_path:          /work/user/istevant/data/ChIPseq/FOXL2_TRIM28cKO_Poulat/mapping_nf-core_ChIP_v2.0.0
+
+# Path to the samplesheet used by the nf-core/RNAseq pipeline.
+# Samples will be ordered in the graphs as they are in the samplesheet.
+ChIP_FOXL2_nf-core_samplesheet:   /work/user/istevant/data/ChIPseq/FOXL2_TRIM28cKO_Poulat/samplesheet.csv
+
+# Path to necessary data within the nf-core/chipseq ouput folder
+# You don't need to modify the path below except if the nf-core/cutandrun pipeline changed.
+ChIP_FOXL2_nf-core_rawPeaks:      bwa/mergedLibrary/macs2/narrowPeak
+ChIP_FOXL2_nf-core_bigwig:        bwa/mergedLibrary/bigwig
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #######################
@@ -197,7 +232,6 @@ Sertoli_spe_DAR: workflow/data/ATAC/ATAC_Sertoli-spe_DAR_lindeman2021.bed
 Granulosa_spe_DAR: workflow/data/ATAC/ATAC_Granulosa-spe_DAR_lindeman2021.bed
 
 FOXL2_Ctrl:      workflow/data/ChIP/FOXL2_peaks.broadPeak_Rossitto.bed
-# FOLX2_cKO:       workflow/data/ChIP/FOXL2_cKO_Rossitto.bed
 NR5A2:           workflow/data/ChIP/NR5A2_peaks.broadPeak_Bianco-Murphy.bed
 ESR2:            workflow/data/ChIP/ESR2_peaks.broadPeak_Birgersson-Lindeman.bed
 RUNX:           workflow/data/ChIP/RUNX1_peaks.narrowPeak_Dinh.bed
@@ -216,9 +250,4 @@ Down_TE_cKO:     workflow/data/TE/Intergenic_TE_downregulated_TRIM28cKO_vs_Ctrl.
 DEGs:            /work/user/istevant/project/scRNA_Trim28/DEG_GraC_WT_vs_KO_clusters.csv
 gene_coord:      workflow/data/mm10_gene_coord.bed
 distance_to_TSS: 2000
-# marker_genes: workflow/data/gonad_marker_genes.csv
-# example_genes: workflow/data/example_genes.csv
-# TF_genes: workflow/data/mouse_transcription_factors.txt
-# TF_pheno: workflow/data/TF_gonad_pheno.tsv
-# peak_examples: workflow/data/gTrack_gene_examples.tsv
-# gene_peak_examples: workflow/data/peak2gene_query.tsv
+

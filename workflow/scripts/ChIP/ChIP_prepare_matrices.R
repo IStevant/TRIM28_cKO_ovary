@@ -255,7 +255,8 @@ get_normalized_counts <- function(raw_counts, samplesheet) {
   dds <- DESeq2::DESeqDataSetFromMatrix(
     countData = raw_counts,
     colData = samplesheet,
-    design = ~conditions
+    # design = ~conditions
+    design = ~1
   )
 
   dds <- DESeq2::estimateSizeFactors(dds)
@@ -275,7 +276,8 @@ get_size_factors <- function(raw_counts, samplesheet) {
   dds <- DESeq2::DESeqDataSetFromMatrix(
     countData = raw_counts,
     colData = samplesheet,
-    design = ~conditions
+    # design = ~conditions
+    design = ~1
   )
 
   dds <- DESeq2::estimateSizeFactors(dds)

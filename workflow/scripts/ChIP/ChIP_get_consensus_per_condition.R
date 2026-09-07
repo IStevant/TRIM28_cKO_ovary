@@ -237,11 +237,21 @@ get_consensus <- function(
 
 log_message("Searching ChIP peak files for condition: ", condition)
 
-peak_pattern <- paste0(
-  "^",
-  condition,
-  "_Rep[0-9]+_peaks\\.narrowPeak$"
-)
+if (any(grep("FOXL2", condition))){
+  peak_pattern <- paste0(
+    "^",
+    condition,
+    "_peaks\\.narrowPeak$"
+  )
+} else {
+  peak_pattern <- paste0(
+    "^",
+    condition,
+    "_Rep[0-9]+_peaks\\.narrowPeak$"
+  )
+}
+
+
 
 bed_files <- list.files(
   path = raw_peak_folder,

@@ -1,7 +1,7 @@
 '''
 Author: Isabelle Stévant
 Affiliation: CNRS UMR 9002
-Date: 29/01/2026
+Date: 26/08/2026
 Licence: MIT
 
 Snakemake rules to run the full pipeline.
@@ -41,13 +41,12 @@ rule all:
             annotation_list 
             + rule_CUTandRUN_input_list
             + rule_ATAC_input_list
-            + rule_ChIP_input_list
+            + rule_ChIP_SUMO_input_list
             + rule_Result1_input_list
             + rule_Result2_input_list
             + rule_Result3_input_list
             + rule_Result4_input_list
             + rule_Result5_input_list
-            # + rule_ChIP_input_list
         )
 
 # Install the necessary R packages using Renv
@@ -84,26 +83,4 @@ rule Get_repeatmasker:
         mem_mb = 12000
     script:
         "workflow/scripts/Get_repeatmasker.R"
-
-
-# # Run the Cut and Run analysis
-# rule Prepare_CUTandRUN_data:
-#     input:
-#         rule_CUTandRUN_input_list
-
-# # Run the Cut and Run analysis
-# rule Prepare_ATAC_data:
-#     input:
-#         rule_ATAC_input_list
-
-# # Run the SUMO ChIP-seq analysis only
-# rule ChIP_analysis:
-#     input:
-#         rule_ChIP_input_list
-
-# # Run the Multiomic analysis only
-# rule Multi_analysis:
-#     input:
-#         rule_Multi_input_list
-
 
