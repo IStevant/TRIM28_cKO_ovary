@@ -51,7 +51,12 @@ rule_Result1_input_list = [
     f"{OUTPUT_PNG}/Fig1H_H3K9me3_TRIM28_TFBS.png",
 
     f"{OUTPUT_TABLES}/TRIM28_peak_annotation.csv",
-    f"{OUTPUT_TABLES}/FOXL2_peak_annotation.csv"
+    f"{OUTPUT_TABLES}/FOXL2_peak_annotation.csv",
+    f"{OUTPUT_TABLES}/ESR2_peak_annotation.csv",
+    f"{OUTPUT_TABLES}/NR5A2_peak_annotation.csv",
+    f"{OUTPUT_TABLES}/RUNX1_peak_annotation.csv",
+    f"{OUTPUT_TABLES}/SOX9_peak_annotation.csv",
+    f"{OUTPUT_TABLES}/DMRT1_peak_annotation.csv"
 ]
 
 
@@ -197,6 +202,76 @@ rule SupData2_annotate_FOXL2_peaks:
         promoter = config["distance_to_TSS"]
     output:
         table    = f"{OUTPUT_TABLES}/FOXL2_peak_annotation.csv"
+    threads: 12
+    resources:
+        mem_mb = 98000
+    script:
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
+
+rule SupData2_annotate_ESR2_peaks:
+    input:
+        bed    = config["ESR2"],
+        genome = "results/data/gencode.vM25.annotation.gtf.gz"
+    params:
+        promoter = config["distance_to_TSS"]
+    output:
+        table    = f"{OUTPUT_TABLES}/ESR2_peak_annotation.csv"
+    threads: 12
+    resources:
+        mem_mb = 98000
+    script:
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
+
+rule SupData2_annotate_NR5A2_peaks:
+    input:
+        bed    = config["NR5A2"],
+        genome = "results/data/gencode.vM25.annotation.gtf.gz"
+    params:
+        promoter = config["distance_to_TSS"]
+    output:
+        table    = f"{OUTPUT_TABLES}/NR5A2_peak_annotation.csv"
+    threads: 12
+    resources:
+        mem_mb = 98000
+    script:
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
+
+rule SupData2_annotate_RUNX1_peaks:
+    input:
+        bed    = config["RUNX"],
+        genome = "results/data/gencode.vM25.annotation.gtf.gz"
+    params:
+        promoter = config["distance_to_TSS"]
+    output:
+        table    = f"{OUTPUT_TABLES}/RUNX1_peak_annotation.csv"
+    threads: 12
+    resources:
+        mem_mb = 98000
+    script:
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
+
+rule SupData2_annotate_SOX9_peaks:
+    input:
+        bed    = config["SOX9"],
+        genome = "results/data/gencode.vM25.annotation.gtf.gz"
+    params:
+        promoter = config["distance_to_TSS"]
+    output:
+        table    = f"{OUTPUT_TABLES}/SOX9_peak_annotation.csv"
+    threads: 12
+    resources:
+        mem_mb = 98000
+    script:
+        "../scripts/Result_1/SupData2_annotate_peaks.R"
+
+rule SupData2_annotate_DMRT1_peaks:
+    input:
+        bed    = config["DMRT1"],
+        genome = "results/data/gencode.vM25.annotation.gtf.gz"
+    params:
+        promoter = config["distance_to_TSS"]
+    output:
+        table    = f"{OUTPUT_TABLES}/DMRT1_peak_annotation.csv"
     threads: 12
     resources:
         mem_mb = 98000

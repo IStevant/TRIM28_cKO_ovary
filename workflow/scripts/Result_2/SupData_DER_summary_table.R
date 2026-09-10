@@ -14,6 +14,7 @@ log_error <- function(...) {
 
 log_message("Starting H3K9me3 DER overlap summary script")
 
+
 ###########################################
 # Libraries
 ###########################################
@@ -25,8 +26,10 @@ suppressPackageStartupMessages({
   library("S4Vectors")
   library("rtracklayer")
   library("txdbmaker")
+  library("GenomicFeatures")
   library("ChIPseeker")
 })
+
 
 ###########################################
 # ChIPseeker options
@@ -36,6 +39,7 @@ options(ChIPseeker.ignore_1st_exon = TRUE)
 options(ChIPseeker.ignore_1st_intron = TRUE)
 options(ChIPseeker.ignore_downstream = TRUE)
 options(ChIPseeker.ignore_promoter_subcategory = TRUE)
+
 
 ###########################################
 # Load inputs, outputs and parameters
@@ -48,115 +52,44 @@ TRIM28_file <- snakemake@input[["TRIM28"]]
 FOXL2_file <- snakemake@input[["FOXL2"]]
 ATAC_Sertoli_file <- snakemake@input[["ATAC_Sertoli"]]
 ATAC_Granulosa_file <- snakemake@input[["ATAC_Granulosa"]]
+
+expressed_genes_file <- snakemake@input[["expressed_genes"]]
+DEG_8weeks_file <- snakemake@input[["DEG_8weeks"]]
+DEG_7months_file <- snakemake@input[["DEG_7months"]]
+sex_bias_file <- snakemake@input[["sex_bias"]]
+
 genome <- snakemake@input[["genome"]]
 
-promoter <- as.numeric(snakemake@params[["promoter"]])
-distance_to_H3K9me3 <- as.numeric(snakemake@params[["distance_to_H3K9me3"]])
+promoter <- as.numeric(
+  snakemake@params[["promoter"]]
+)
+
+distance_to_H3K9me3 <- as.numeric(
+  snakemake@params[["distance_to_H3K9me3"]]
+)
+
+nearest_gene_max_distance <- 50000
 
 output_table <- snakemake@output[["table"]]
-
 
 if (is.na(promoter)) {
   log_error("Parameter 'promoter' must be numeric")
 }
 
-###########################################
-# Load H3K9me3 DER regions
-###########################################
-
-log_message("Loading H3K9me3 differentially enriched regions")
-
-H3K9me3_DER <- read.csv(
-  H3K9me3_DER_file,
-  header = TRUE,
-  row.names = 1,
-  check.names = FALSE
-)
-
-if (nrow(H3K9me3_DER) == 0) {
-  log_error("H3K9me3 DER table contains no regions")
+if (is.na(distance_to_H3K9me3)) {
+  log_error("Parameter 'distance_to_H3K9me3' must be numeric")
 }
 
-
-
-if (!"x" %in% colnames(H3K9me3_DER)) {
-  log_error("Column 'x' not found in H3K9me3 DER table")
-}
-
-H3K9me3_regions <- GenomicRanges::GRanges(
-  rownames(H3K9me3_DER)
-)
-
-names(H3K9me3_regions) <- rownames(H3K9me3_DER)
-
-log_message("Number of H3K9me3 DER regions: ", length(H3K9me3_regions))
-
-log_message("Extending H3K9me3 peaks by ", distance_to_H3K9me3, " bp")
-
-H3K9me3_regions <- H3K9me3_regions + distance_to_H3K9me3
-
-###########################################
-# Load overlap datasets
-###########################################
-
-log_message("Importing TRIM28 peaks")
-
-TRIM28_peaks <- rtracklayer::import(
-  TRIM28_file
-)
-
-log_message("Importing FOXL2 peaks")
-
-FOXL2_peaks <- rtracklayer::import(
-  FOXL2_file
-)
-
-log_message("Importing Sertoli-biased ATAC peaks")
-
-ATAC_Sertoli_peaks <- rtracklayer::import(
-  ATAC_Sertoli_file
-)
-
-log_message("Importing Granulosa-biased ATAC peaks")
-
-ATAC_Granulosa_peaks <- rtracklayer::import(
-  ATAC_Granulosa_file
-)
-
-log_message("TRIM28 peaks: ", length(TRIM28_peaks))
-log_message("FOXL2 peaks: ", length(FOXL2_peaks))
-log_message("Sertoli-biased ATAC peaks: ", length(ATAC_Sertoli_peaks))
-log_message("Granulosa-biased ATAC peaks: ", length(ATAC_Granulosa_peaks))
-
-###########################################
-# Prepare genome annotation
-###########################################
-
-log_message("Loading genome annotation")
-
-genome_gtf <- rtracklayer::import(
-  genome
-)
-
-log_message("Preparing gene ID to symbol mapping")
-
-gene2symbol <- GenomicRanges::mcols(genome_gtf)[, c("gene_id", "gene_name")]
-gene2symbol <- unique(gene2symbol)
-rownames(gene2symbol) <- gene2symbol$gene_id
-
-log_message("Building TxDb object")
-
-TxDb <- txdbmaker::makeTxDbFromGFF(
-  genome
-)
 
 ###########################################
 # Functions
 ###########################################
 
-make_region_id <- function(
-  regions
-) {
+#' Generate genomic region IDs
+#'
+#' @param regions GRanges object.
+#' @return Character vector formatted as chr:start-end.
+make_region_id <- function(regions) {
   paste0(
     GenomicRanges::seqnames(regions),
     ":",
@@ -166,6 +99,12 @@ make_region_id <- function(
   )
 }
 
+
+#' Determine whether query regions overlap subject regions
+#'
+#' @param query_regions Query GRanges object.
+#' @param subject_regions Subject GRanges object.
+#' @return Logical vector.
 get_overlap_status <- function(
   query_regions,
   subject_regions
@@ -177,6 +116,78 @@ get_overlap_status <- function(
   ) > 0
 }
 
+
+#' Load DEG direction table
+#'
+#' The input table must contain:
+#'   - Gene
+#'   - DEG: "up" or "down"
+#'
+#' @param file Path to DEG table.
+#' @return Dataframe with columns gene and direction.
+load_DEG_direction <- function(file) {
+  data <- read.csv(
+    file,
+    header = TRUE,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+
+  if (!all(c("Gene", "DEG") %in% colnames(data))) {
+    log_error(
+      "DEG table must contain columns 'Gene' and 'DEG': ",
+      file
+    )
+  }
+
+  output <- data.frame(
+    gene = data$Gene,
+    direction = tolower(data$DEG),
+    stringsAsFactors = FALSE
+  )
+
+  output <- output[
+    !is.na(output$gene) &
+      output$gene != "",
+    ,
+    drop = FALSE
+  ]
+
+  invalid_direction <- !output$direction %in% c(
+    "up",
+    "down"
+  )
+
+  if (any(invalid_direction)) {
+    log_error(
+      "Column 'DEG' must contain only 'up' or 'down' in file: ",
+      file
+    )
+  }
+
+  output$direction <- ifelse(
+    output$direction == "up",
+    "Up",
+    "Down"
+  )
+
+  output <- output[
+    !duplicated(output$gene),
+    ,
+    drop = FALSE
+  ]
+
+  return(output)
+}
+
+
+#' Annotate regions using ChIPseeker
+#'
+#' @param regions GRanges object.
+#' @param TxDb TxDb annotation.
+#' @param gene2symbol Gene ID to gene symbol mapping.
+#' @param promoter Promoter size.
+#' @return Annotation dataframe.
 annotate_regions <- function(
   regions,
   TxDb,
@@ -209,18 +220,159 @@ annotate_regions <- function(
     "gene_name"
   ]
 
-  annotation_table <- data.frame(
+  data.frame(
     region = make_region_id(regions),
     annotation = annotation$annotation,
     nearest_gene = annotation$geneId,
     distance_to_TSS = annotation$distanceToTSS,
     stringsAsFactors = FALSE
   )
-
-  return(annotation_table)
 }
 
-make_overlap_category <- function(
+
+#' Find nearest expressed gene
+#'
+#' If a region overlaps an expressed gene body, that gene is returned.
+#' Otherwise, the nearest expressed gene based on TSS distance is returned
+#' if it lies within max_distance.
+#'
+#' @param regions Query GRanges object.
+#' @param gene_ranges GRanges object containing expressed gene bodies.
+#' @param gene_TSS GRanges object containing expressed gene TSS.
+#' @param max_distance Maximum accepted distance in bp.
+#' @return Character vector of nearest expressed gene symbols.
+get_nearest_expressed_gene <- function(
+  regions,
+  gene_ranges,
+  gene_TSS,
+  max_distance = 50000
+) {
+  log_message(
+    "Finding overlapping or nearest expressed gene within +/- ",
+    max_distance,
+    " bp"
+  )
+
+  nearest_gene <- rep(
+    NA_character_,
+    length(regions)
+  )
+
+  if (length(gene_ranges) == 0) {
+    log_error(
+      "No expressed genes found in genome annotation"
+    )
+  }
+
+  ###########################################
+  # First assign overlapping gene bodies
+  ###########################################
+
+  overlap_hits <- GenomicRanges::findOverlaps(
+    regions,
+    gene_ranges,
+    ignore.strand = TRUE
+  )
+
+  if (length(overlap_hits) > 0) {
+    overlap_query <- S4Vectors::queryHits(
+      overlap_hits
+    )
+
+    overlap_subject <- S4Vectors::subjectHits(
+      overlap_hits
+    )
+
+    overlapping_queries <- unique(
+      overlap_query
+    )
+
+    for (query_id in overlapping_queries) {
+      subject_ids <- overlap_subject[
+        overlap_query == query_id
+      ]
+
+      if (length(subject_ids) == 1) {
+        selected_subject <- subject_ids
+      } else {
+        tss_distances <- GenomicRanges::distance(
+          regions[query_id],
+          gene_TSS[subject_ids],
+          ignore.strand = TRUE
+        )
+
+        selected_subject <- subject_ids[
+          which.min(tss_distances)
+        ]
+      }
+
+      nearest_gene[
+        query_id
+      ] <- GenomicRanges::mcols(
+        gene_ranges
+      )$gene_symbol[
+        selected_subject
+      ]
+    }
+  }
+
+  log_message(
+    "Regions overlapping an expressed gene body: ",
+    sum(!is.na(nearest_gene))
+  )
+
+  ###########################################
+  # Assign nearest TSS to remaining regions
+  ###########################################
+
+  remaining_regions <- which(
+    is.na(nearest_gene)
+  )
+
+  if (length(remaining_regions) > 0) {
+    nearest_hits <- GenomicRanges::distanceToNearest(
+      regions[remaining_regions],
+      gene_TSS,
+      ignore.strand = TRUE
+    )
+
+    query_index <- S4Vectors::queryHits(
+      nearest_hits
+    )
+
+    subject_index <- S4Vectors::subjectHits(
+      nearest_hits
+    )
+
+    distances <- S4Vectors::mcols(
+      nearest_hits
+    )$distance
+
+    valid_hits <- distances <= max_distance
+
+    original_query_index <- remaining_regions[
+      query_index[valid_hits]
+    ]
+
+    nearest_gene[
+      original_query_index
+    ] <- GenomicRanges::mcols(
+      gene_TSS
+    )$gene_symbol[
+      subject_index[valid_hits]
+    ]
+  }
+
+  return(nearest_gene)
+}
+
+
+#' Generate ATAC sex-bias category
+#'
+#' @param overlap_sertoli Logical vector.
+#' @param overlap_granulosa Logical vector.
+#' @return Character vector with Sertoli, Granulosa or None.
+make_ATAC_bias_category <- function(
   overlap_sertoli,
   overlap_granulosa
 ) {
@@ -229,50 +381,432 @@ make_overlap_category <- function(
     length(overlap_sertoli)
   )
 
-  category[overlap_sertoli] <- "Sertoli-biased ATAC"
-  category[!overlap_sertoli & overlap_granulosa] <- "Granulosa-biased ATAC"
+  category[
+    overlap_sertoli
+  ] <- "Sertoli"
+
+  category[
+    !overlap_sertoli &
+      overlap_granulosa
+  ] <- "Granulosa"
 
   return(category)
 }
 
+
+#' Match gene annotations
+#'
+#' @param genes Vector of gene symbols.
+#' @param annotation_table Annotation dataframe.
+#' @param value_column Column containing values to retrieve.
+#' @param default Value used when no match is found.
+#' @return Character vector with the same length as genes.
+match_gene_annotation <- function(
+  genes,
+  annotation_table,
+  value_column,
+  default = "None"
+) {
+  values <- rep(
+    default,
+    length(genes)
+  )
+
+  valid_genes <- !is.na(genes) &
+    genes != ""
+
+  matched_index <- match(
+    genes[valid_genes],
+    annotation_table$gene
+  )
+
+  matched <- !is.na(matched_index)
+
+  values[
+    which(valid_genes)[matched]
+  ] <- as.character(
+    annotation_table[
+      matched_index[matched],
+      value_column
+    ]
+  )
+
+  values[
+    is.na(values) |
+      values == ""
+  ] <- default
+
+  return(values)
+}
+
+
 ###########################################
-# Compute overlaps
+# Load H3K9me3 DER regions
+###########################################
+
+log_message(
+  "Loading H3K9me3 differentially enriched regions"
+)
+
+H3K9me3_DER <- read.csv(
+  H3K9me3_DER_file,
+  header = TRUE,
+  row.names = 1,
+  check.names = FALSE
+)
+
+if (nrow(H3K9me3_DER) == 0) {
+  log_error(
+    "H3K9me3 DER table contains no regions"
+  )
+}
+
+if (!"x" %in% colnames(H3K9me3_DER)) {
+  log_error(
+    "Column 'x' not found in H3K9me3 DER table"
+  )
+}
+
+H3K9me3_regions <- GenomicRanges::GRanges(
+  rownames(H3K9me3_DER)
+)
+
+names(H3K9me3_regions) <- rownames(
+  H3K9me3_DER
+)
+
+log_message(
+  "Number of H3K9me3 DER regions: ",
+  length(H3K9me3_regions)
+)
+
+
+###########################################
+# Extend regions for overlap analyses
+###########################################
+
+log_message(
+  "Extending H3K9me3 DER regions by ",
+  distance_to_H3K9me3,
+  " bp for overlap analyses"
+)
+
+H3K9me3_regions_extended <- H3K9me3_regions +
+  distance_to_H3K9me3
+
+log_message(
+  "Original H3K9me3 regions: ",
+  length(H3K9me3_regions)
+)
+
+log_message(
+  "Extended H3K9me3 regions: ",
+  length(H3K9me3_regions_extended)
+)
+
+
+###########################################
+# Load overlap datasets
+###########################################
+
+log_message("Importing TRIM28 peaks")
+
+TRIM28_peaks <- rtracklayer::import(
+  TRIM28_file
+)
+
+log_message("Importing FOXL2 peaks")
+
+FOXL2_peaks <- rtracklayer::import(
+  FOXL2_file
+)
+
+log_message(
+  "Importing Sertoli-biased ATAC peaks"
+)
+
+ATAC_Sertoli_peaks <- rtracklayer::import(
+  ATAC_Sertoli_file
+)
+
+log_message(
+  "Importing Granulosa-biased ATAC peaks"
+)
+
+ATAC_Granulosa_peaks <- rtracklayer::import(
+  ATAC_Granulosa_file
+)
+
+log_message(
+  "TRIM28 peaks: ",
+  length(TRIM28_peaks)
+)
+
+log_message(
+  "FOXL2 peaks: ",
+  length(FOXL2_peaks)
+)
+
+log_message(
+  "Sertoli-biased ATAC peaks: ",
+  length(ATAC_Sertoli_peaks)
+)
+
+log_message(
+  "Granulosa-biased ATAC peaks: ",
+  length(ATAC_Granulosa_peaks)
+)
+
+
+###########################################
+# Load gene-associated datasets
+###########################################
+
+log_message("Loading expressed gene list")
+
+expressed_genes <- read.table(
+  expressed_genes_file,
+  header = FALSE,
+  stringsAsFactors = FALSE
+)[, 1]
+
+expressed_genes <- unique(
+  expressed_genes[
+    !is.na(expressed_genes) &
+      expressed_genes != ""
+  ]
+)
+
+log_message(
+  "Expressed genes loaded: ",
+  length(expressed_genes)
+)
+
+log_message(
+  "Loading 8-week DEG annotation"
+)
+
+DEG_8weeks <- load_DEG_direction(
+  DEG_8weeks_file
+)
+
+log_message(
+  "Loading 7-month DEG annotation"
+)
+
+DEG_7months <- load_DEG_direction(
+  DEG_7months_file
+)
+
+log_message(
+  "Loading sex-biased gene annotation"
+)
+
+sex_bias <- read.delim(
+  sex_bias_file,
+  header = TRUE,
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+
+if (
+  !"gene" %in% colnames(sex_bias) ||
+    !"sex.bias" %in% colnames(sex_bias)
+) {
+  log_error(
+    "Sex-bias table must contain columns 'gene' and 'sex.bias'"
+  )
+}
+
+sex_bias <- sex_bias[
+  !is.na(sex_bias$gene) &
+    sex_bias$gene != "",
+  c(
+    "gene",
+    "sex.bias"
+  ),
+  drop = FALSE
+]
+
+sex_bias <- sex_bias[
+  !duplicated(sex_bias$gene),
+  ,
+  drop = FALSE
+]
+
+sex_bias$sex.bias <- ifelse(
+  tolower(sex_bias$sex.bias) == "sertoli",
+  "Sertoli",
+  ifelse(
+    tolower(sex_bias$sex.bias) == "granulosa",
+    "Granulosa",
+    "None"
+  )
+)
+
+
+###########################################
+# Prepare genome annotation
+###########################################
+
+log_message(
+  "Loading genome annotation"
+)
+
+genome_gtf <- rtracklayer::import(
+  genome
+)
+
+log_message(
+  "Preparing gene ID to symbol mapping"
+)
+
+gene2symbol <- GenomicRanges::mcols(
+  genome_gtf
+)[, c(
+  "gene_id",
+  "gene_name"
+)]
+
+gene2symbol <- unique(
+  as.data.frame(
+    gene2symbol
+  )
+)
+
+gene2symbol <- gene2symbol[
+  !is.na(gene2symbol$gene_id) &
+    !is.na(gene2symbol$gene_name),
+  ,
+  drop = FALSE
+]
+
+gene2symbol <- gene2symbol[
+  !duplicated(gene2symbol$gene_id),
+  ,
+  drop = FALSE
+]
+
+rownames(gene2symbol) <- gene2symbol$gene_id
+
+log_message("Building TxDb object")
+
+TxDb <- txdbmaker::makeTxDbFromGFF(
+  genome
+)
+
+
+###########################################
+# Build expressed gene annotation
+###########################################
+
+log_message(
+  "Building expressed gene annotation"
+)
+
+gene_ranges <- GenomicFeatures::genes(
+  TxDb
+)
+
+gene_ids <- names(
+  gene_ranges
+)
+
+gene_symbols <- gene2symbol[
+  gene_ids,
+  "gene_name"
+]
+
+GenomicRanges::mcols(
+  gene_ranges
+)$gene_symbol <- gene_symbols
+
+gene_ranges <- gene_ranges[
+  !is.na(
+    GenomicRanges::mcols(
+      gene_ranges
+    )$gene_symbol
+  )
+]
+
+gene_ranges <- gene_ranges[
+  GenomicRanges::mcols(
+    gene_ranges
+  )$gene_symbol %in%
+    expressed_genes
+]
+
+gene_TSS <- GenomicRanges::promoters(
+  gene_ranges,
+  upstream = 0,
+  downstream = 1
+)
+
+log_message(
+  "Expressed genes matched to genome annotation: ",
+  length(gene_ranges)
+)
+
+
+###########################################
+# Compute genomic overlaps
 ###########################################
 
 log_message("Computing overlaps")
 
 overlap_TRIM28 <- get_overlap_status(
-  query_regions = H3K9me3_regions,
+  query_regions = H3K9me3_regions_extended,
   subject_regions = TRIM28_peaks
 )
 
 overlap_FOXL2 <- get_overlap_status(
-  query_regions = H3K9me3_regions,
+  query_regions = H3K9me3_regions_extended,
   subject_regions = FOXL2_peaks
 )
 
 overlap_ATAC_Sertoli <- get_overlap_status(
-  query_regions = H3K9me3_regions,
+  query_regions = H3K9me3_regions_extended,
   subject_regions = ATAC_Sertoli_peaks
 )
 
 overlap_ATAC_Granulosa <- get_overlap_status(
-  query_regions = H3K9me3_regions,
+  query_regions = H3K9me3_regions_extended,
   subject_regions = ATAC_Granulosa_peaks
 )
 
-ATAC_bias_category <- make_overlap_category(
+ATAC_bias <- make_ATAC_bias_category(
   overlap_sertoli = overlap_ATAC_Sertoli,
   overlap_granulosa = overlap_ATAC_Granulosa
 )
 
-log_message("Regions overlapping TRIM28: ", sum(overlap_TRIM28))
-log_message("Regions overlapping FOXL2: ", sum(overlap_FOXL2))
-log_message("Regions overlapping Sertoli-biased ATAC: ", sum(overlap_ATAC_Sertoli))
-log_message("Regions overlapping Granulosa-biased ATAC: ", sum(overlap_ATAC_Granulosa))
+log_message(
+  "Regions overlapping TRIM28: ",
+  sum(overlap_TRIM28)
+)
+
+log_message(
+  "Regions overlapping FOXL2: ",
+  sum(overlap_FOXL2)
+)
+
+log_message(
+  "Regions with Sertoli-biased ATAC: ",
+  sum(ATAC_bias == "Sertoli")
+)
+
+log_message(
+  "Regions with Granulosa-biased ATAC: ",
+  sum(ATAC_bias == "Granulosa")
+)
+
+log_message(
+  "Regions with no sex-biased ATAC overlap: ",
+  sum(ATAC_bias == "None")
+)
+
 
 ###########################################
-# Annotate regions
+# Annotate genomic regions
 ###########################################
 
 annotation_table <- annotate_regions(
@@ -282,61 +816,362 @@ annotation_table <- annotate_regions(
   promoter = promoter
 )
 
+log_message(
+  "Annotation rows: ",
+  nrow(annotation_table)
+)
+
+
 ###########################################
-# Build output table
+# Find nearest expressed gene
 ###########################################
 
-log_message("Building final summary table")
+nearest_expressed_gene <- get_nearest_expressed_gene(
+  regions = H3K9me3_regions,
+  gene_ranges = gene_ranges,
+  gene_TSS = gene_TSS,
+  max_distance = nearest_gene_max_distance
+)
+
+log_message(
+  "Nearest expressed gene vector length: ",
+  length(nearest_expressed_gene)
+)
+
+log_message(
+  "Regions with an expressed gene assigned: ",
+  sum(!is.na(nearest_expressed_gene))
+)
+
+
+###########################################
+# Annotate nearest expressed genes
+###########################################
+
+log_message(
+  "Adding DEG and sex-bias annotations"
+)
+
+DEG_8weeks_status <- match_gene_annotation(
+  genes = nearest_expressed_gene,
+  annotation_table = DEG_8weeks,
+  value_column = "direction",
+  default = "None"
+)
+
+DEG_7months_status <- match_gene_annotation(
+  genes = nearest_expressed_gene,
+  annotation_table = DEG_7months,
+  value_column = "direction",
+  default = "None"
+)
+
+sex_bias_status <- match_gene_annotation(
+  genes = nearest_expressed_gene,
+  annotation_table = sex_bias,
+  value_column = "sex.bias",
+  default = "None"
+)
+
+
+###########################################
+# Check output vector lengths
+###########################################
+
+log_message(
+  "Checking output vector lengths"
+)
 
 region_id <- make_region_id(
   H3K9me3_regions
 )
 
-output_table_df <- data.frame(
-  chromosome = as.character(
-    GenomicRanges::seqnames(H3K9me3_regions)
+expected_length <- length(
+  H3K9me3_regions
+)
+
+output_lengths <- c(
+  Chromosome = length(
+    GenomicRanges::seqnames(
+      H3K9me3_regions
+    )
   ),
-  start = GenomicRanges::start(H3K9me3_regions),
-  end = GenomicRanges::end(H3K9me3_regions),
-  region = region_id,
-  H3K9me3_cluster = H3K9me3_DER$x,
-  overlap_TRIM28 = ifelse(overlap_TRIM28, "YES", "NO"),
-  overlap_FOXL2 = ifelse(overlap_FOXL2, "YES", "NO"),
-  overlap_ATAC_Sertoli_biased = ifelse(overlap_ATAC_Sertoli, "YES", "NO"),
-  overlap_ATAC_Granulosa_biased = ifelse(overlap_ATAC_Granulosa, "YES", "NO"),
-  ATAC_bias_category = ATAC_bias_category,
+  Start = length(
+    GenomicRanges::start(
+      H3K9me3_regions
+    )
+  ),
+  End = length(
+    GenomicRanges::end(
+      H3K9me3_regions
+    )
+  ),
+  Region = length(
+    region_id
+  ),
+  H3K9me3_change = length(
+    H3K9me3_DER$x
+  ),
+  TRIM28_overlap = length(
+    overlap_TRIM28
+  ),
+  FOXL2_overlap = length(
+    overlap_FOXL2
+  ),
+  ATAC_sex_bias = length(
+    ATAC_bias
+  ),
+  Nearest_expressed_gene_50kb = length(
+    nearest_expressed_gene
+  ),
+  Expression_change_8w = length(
+    DEG_8weeks_status
+  ),
+  Expression_change_7m = length(
+    DEG_7months_status
+  ),
+  Gene_sex_bias = length(
+    sex_bias_status
+  )
+)
+
+log_message(
+  "Expected number of rows: ",
+  expected_length
+)
+
+for (column_name in names(output_lengths)) {
+  log_message(
+    column_name,
+    ": ",
+    output_lengths[[column_name]]
+  )
+}
+
+invalid_lengths <- output_lengths !=
+  expected_length
+
+if (any(invalid_lengths)) {
+  log_error(
+    "Invalid output vector length for: ",
+    paste(
+      names(output_lengths)[invalid_lengths],
+      collapse = ", "
+    )
+  )
+}
+
+
+###########################################
+# Build output table
+###########################################
+
+log_message(
+  "Building final summary table"
+)
+
+output_table_df <- data.frame(
+  Chromosome = as.character(
+    GenomicRanges::seqnames(
+      H3K9me3_regions
+    )
+  ),
+  Start = GenomicRanges::start(
+    H3K9me3_regions
+  ),
+  End = GenomicRanges::end(
+    H3K9me3_regions
+  ),
+  Region = region_id,
+  `H3K9me3 change` = H3K9me3_DER$x,
+  `TRIM28 overlap` = ifelse(
+    overlap_TRIM28,
+    "Yes",
+    "No"
+  ),
+  `FOXL2 overlap` = ifelse(
+    overlap_FOXL2,
+    "Yes",
+    "No"
+  ),
+  `ATAC sex bias` = ATAC_bias,
+  `Nearest expressed gene 50 kb` = nearest_expressed_gene,
+  `Expression change 8w` = DEG_8weeks_status,
+  `Expression change 7m` = DEG_7months_status,
+  `Gene sex bias` = sex_bias_status,
+  check.names = FALSE,
   stringsAsFactors = FALSE
+)
+
+
+###########################################
+# Add ChIPseeker annotation
+###########################################
+
+log_message(
+  "Merging ChIPseeker annotation"
+)
+
+colnames(annotation_table) <- c(
+  "Region",
+  "Genomic annotation",
+  "Nearest gene",
+  "TSS distance"
 )
 
 output_table_df <- merge(
   output_table_df,
   annotation_table,
-  by = "region",
+  by = "Region",
   all.x = TRUE,
   sort = FALSE
 )
 
+log_message(
+  "Rows after annotation merge: ",
+  nrow(output_table_df)
+)
+
+
+###########################################
+# Restore column order
+###########################################
+
 output_table_df <- output_table_df[, c(
-  "chromosome",
-  "start",
-  "end",
-  "region",
-  "H3K9me3_cluster",
-  "overlap_TRIM28",
-  "overlap_FOXL2",
-  "overlap_ATAC_Sertoli_biased",
-  "overlap_ATAC_Granulosa_biased",
-  "ATAC_bias_category",
-  "annotation",
-  "nearest_gene",
-  "distance_to_TSS"
+  "Chromosome",
+  "Start",
+  "End",
+  "Region",
+  "H3K9me3 change",
+  "TRIM28 overlap",
+  "FOXL2 overlap",
+  "ATAC sex bias",
+  "Genomic annotation",
+  "Nearest gene",
+  "TSS distance",
+  "Nearest expressed gene 50 kb",
+  "Expression change 8w",
+  "Expression change 7m",
+  "Gene sex bias"
 )]
+
+
+###########################################
+# Replace missing values
+###########################################
+
+output_table_df[[
+  "Nearest expressed gene 50 kb"
+]][
+  is.na(
+    output_table_df[[
+      "Nearest expressed gene 50 kb"
+    ]]
+  )
+] <- "None"
+
+output_table_df[[
+  "Expression change 8w"
+]][
+  is.na(
+    output_table_df[[
+      "Expression change 8w"
+    ]]
+  )
+] <- "None"
+
+output_table_df[[
+  "Expression change 7m"
+]][
+  is.na(
+    output_table_df[[
+      "Expression change 7m"
+    ]]
+  )
+] <- "None"
+
+output_table_df[[
+  "Gene sex bias"
+]][
+  is.na(
+    output_table_df[[
+      "Gene sex bias"
+    ]]
+  ) |
+    output_table_df[[
+      "Gene sex bias"
+    ]] == ""
+] <- "None"
+
+
+###########################################
+# Final checks
+###########################################
+
+log_message(
+  "Final number of output rows: ",
+  nrow(output_table_df)
+)
+
+log_message(
+  "Final number of output columns: ",
+  ncol(output_table_df)
+)
+
+log_message(
+  "Regions without assigned expressed gene: ",
+  sum(
+    output_table_df[[
+      "Nearest expressed gene 50 kb"
+    ]] == "None"
+  )
+)
+
+log_message(
+  "8-week up-regulated nearest genes: ",
+  sum(
+    output_table_df[[
+      "Expression change 8w"
+    ]] == "Up"
+  )
+)
+
+log_message(
+  "8-week down-regulated nearest genes: ",
+  sum(
+    output_table_df[[
+      "Expression change 8w"
+    ]] == "Down"
+  )
+)
+
+log_message(
+  "7-month up-regulated nearest genes: ",
+  sum(
+    output_table_df[[
+      "Expression change 7m"
+    ]] == "Up"
+  )
+)
+
+log_message(
+  "7-month down-regulated nearest genes: ",
+  sum(
+    output_table_df[[
+      "Expression change 7m"
+    ]] == "Down"
+  )
+)
+
 
 ###########################################
 # Save output table
 ###########################################
 
-log_message("Writing output table: ", output_table)
+log_message(
+  "Writing output table: ",
+  output_table
+)
 
 write.table(
   output_table_df,
@@ -347,4 +1182,6 @@ write.table(
   col.names = TRUE
 )
 
-log_message("Analysis completed successfully")
+log_message(
+  "Analysis completed successfully"
+)

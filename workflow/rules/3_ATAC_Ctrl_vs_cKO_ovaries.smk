@@ -108,7 +108,11 @@ rule_Result3_input_list = [
     f"{OUTPUT_PNG}/ATAC_DAR_TF_motifs_genome_bg_fine_clustering.png",
     f"{OUTPUT_TABLES}/ATAC_ctrl_annotation.tsv",
     f"{OUTPUT_TABLES}/ATAC_cKO_annotation.tsv",
-    f"{OUTPUT_TABLES}/ATAC_DAR_overlap_summary.tsv",
+
+    f"{OUTPUT_PDF}/DAR_sex_bias_gene_TF.pdf",
+    f"{OUTPUT_PNG}/DAR_sex_bias_gene_TF.png",
+    f"{OUTPUT_TABLES}/ATAC_sex_bias-TF_statistics.csv",
+    f"{OUTPUT_TABLES}/ATAC_sex_bias-gene_statistics.csv",
 
     f"{OUTPUT_TABLES}/ATAC_DAR_DE_TE_clusters.tsv",
     f"{OUTPUT_TABLES}/ATAC_DAR_DE_TE_clusters_summary.tsv"
@@ -501,9 +505,16 @@ rule ATAC_DAR_overlap_summary:
         H3K9me3_cKO   = f"{CR_TABLES}/peaks/consensus_per_condition/KO_H3K9me3_consensus_peaks.bed",
         TRIM28        = config["TRIM28_peaks"],
         FOXL2         = config["FOXL2_Ctrl"],
+        SOX9          = config["SOX9"],
+        DMRT1          = config["DMRT1"],
         ATAC_Sertoli   = config["Sertoli_spe_DAR"],
         ATAC_Granulosa = config["Granulosa_spe_DAR"],
-        genome        = "results/data/gencode.vM25.annotation.gtf.gz"
+        genome        = "results/data/gencode.vM25.annotation.gtf.gz",
+
+        expressed_genes = config["expressed_genes"],
+        DEG_8weeks = config["scRNAseq"],
+        DEG_7months = config["bulk_RNAseq"],
+        sex_bias = config["sex_biased_genes"]
     params:
         distance_to_H3K9me3 = config["distance_to_H3K9me3"],
         promoter            = config["CR_promoter_distance"]
@@ -515,6 +526,23 @@ rule ATAC_DAR_overlap_summary:
     script:
         "../scripts/Result_3/SupData_DAR_summary_table.R"
 
+
+
+
+rule ATAC_DAR_sex_bias_gene_TF:
+    input:
+        ATAC_summary = f"{OUTPUT_TABLES}/ATAC_DAR_overlap_summary.tsv",
+    output:
+        pdf = f"{OUTPUT_PDF}/DAR_sex_bias_gene_TF.pdf",
+        png = f"{OUTPUT_PNG}/DAR_sex_bias_gene_TF.png",
+        TF_statistics = f"{OUTPUT_TABLES}/ATAC_sex_bias-TF_statistics.csv",
+        gene_statistics = f"{OUTPUT_TABLES}/ATAC_sex_bias-gene_statistics.csv",
+        expression_statistics = f"{OUTPUT_TABLES}/ATAC_sex_bias-expression_statistics.csv"
+    threads: 1
+    resources:
+        mem_mb = 8000
+    script:
+        "../scripts/Result_3/Fig3E_DAR_sex_bias_gene_TF.R"
 
 
 rule ATAC_DAR_DE_TE_clusters:

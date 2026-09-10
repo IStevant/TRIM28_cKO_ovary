@@ -412,7 +412,12 @@ rule H3K9me3_DER_overlap_summary:
         FOXL2         = config["FOXL2_Ctrl"],
         ATAC_Sertoli   = config["Sertoli_spe_DAR"],
         ATAC_Granulosa = config["Granulosa_spe_DAR"],
-        genome        = "results/data/gencode.vM25.annotation.gtf.gz"
+        genome        = "results/data/gencode.vM25.annotation.gtf.gz",
+
+        expressed_genes = config["expressed_genes"],
+        DEG_8weeks = config["scRNAseq"],
+        DEG_7months = config["bulk_RNAseq"],
+        sex_bias = config["sex_biased_genes"]
     params:
         distance_to_H3K9me3 = config["distance_to_H3K9me3"],
         promoter            = config["CR_promoter_distance"]
